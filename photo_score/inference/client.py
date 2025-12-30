@@ -89,13 +89,20 @@ class OpenRouterClient:
 
             return base64_data, "image/jpeg"
 
-    def _call_api(self, image_path: Path, prompt: str, model: str | None = None) -> dict:
+    def _call_api(
+        self,
+        image_path: Path,
+        prompt: str,
+        model: str | None = None,
+        max_tokens: int = 256,
+    ) -> dict:
         """Make API call with image and prompt.
 
         Args:
             image_path: Path to image file.
             prompt: Text prompt for analysis.
             model: Model to use (defaults to self.model_name).
+            max_tokens: Maximum tokens in response (default 256).
 
         Returns:
             Parsed JSON response from model.
@@ -119,7 +126,7 @@ class OpenRouterClient:
                     ],
                 }
             ],
-            "max_tokens": 256,
+            "max_tokens": max_tokens,
             "temperature": 0,
         }
 
@@ -163,12 +170,38 @@ class OpenRouterClient:
         result = response.json()
         content = result["choices"][0]["message"]["content"]
 
-        # Extract JSON from response (handle markdown code blocks)
-        json_match = re.search(r"\{[^{}]*\}", content, re.DOTALL)
-        if not json_match:
+        # Extract JSON from response (handle markdown code blocks and nested structures)
+        # First try to extract from markdown code block
+        code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        if code_block_match:
+            try:
+                return json.loads(code_block_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Try to find JSON by matching balanced braces
+        # Find the first { and extract everything to the matching }
+        start_idx = content.find("{")
+        if start_idx == -1:
             raise OpenRouterError(f"No JSON found in response: {content}")
 
-        return json.loads(json_match.group())
+        # Count braces to find matching closing brace
+        depth = 0
+        end_idx = start_idx
+        for i, char in enumerate(content[start_idx:], start_idx):
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    end_idx = i + 1
+                    break
+
+        json_str = content[start_idx:end_idx]
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise OpenRouterError(f"Invalid JSON in response: {e}\nContent: {content}")
 
     def analyze_aesthetic(self, image_path: Path) -> AestheticResponse:
         """Analyze aesthetic qualities of an image."""

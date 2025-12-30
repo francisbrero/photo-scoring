@@ -12,6 +12,7 @@ from photo_score.inference.prompts_v2 import (
     AESTHETIC_SCORING_PROMPT,
     TECHNICAL_SCORING_PROMPT,
     METADATA_PROMPT,
+    CRITIQUE_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ MODELS = {
         ("google/gemini-2.5-flash", 0.30),
     ],
     "metadata": "mistralai/pixtral-12b",                # $0.10/M - cheap
+    "critique": "google/gemini-2.5-flash",              # $0.30/M - good reasoning
 }
 
 
@@ -195,262 +197,86 @@ class CompositeScorer:
             logger.warning(f"Metadata extraction failed: {e}")
             return ("", None, None)
 
-    def generate_explanation(self, result: CompositeResult) -> str:
-        """Generate a specific, opinionated critique of the image.
+    def generate_critique(self, image_path: Path, result: CompositeResult) -> dict:
+        """Generate a detailed critique using an LLM.
 
-        Uses photography critique vocabulary to explain exactly why the image
-        scores the way it does, with concrete observations.
+        Returns a structured critique with summary, strengths, improvements, and key recommendation.
         """
         features = result.features
+
+        # Build the prompt with context
+        prompt = CRITIQUE_PROMPT.format(
+            scene_type=features.scene_type or "unknown",
+            main_subject=features.main_subject or "unclear",
+            subject_position=features.subject_position or "unknown",
+            background=features.background or "unknown",
+            lighting=features.lighting or "unknown",
+            color_palette=features.color_palette or "unknown",
+            depth_of_field=features.depth_of_field or "unknown",
+            time_of_day=features.time_of_day or "unknown",
+            composition=result.composition,
+            subject_strength=result.subject_strength,
+            visual_appeal=result.visual_appeal,
+            sharpness=result.sharpness,
+            exposure=result.exposure,
+            noise_level=result.noise_level,
+            final_score=result.final_score,
+        )
+
+        try:
+            logger.info(f"Generating critique: {image_path.name}")
+            response = self.client._call_api(
+                image_path, prompt, model=MODELS["critique"], max_tokens=1024
+            )
+
+            # Parse the structured response
+            critique = {
+                "summary": response.get("summary", ""),
+                "working_well": response.get("working_well", []),
+                "could_improve": response.get("could_improve", []),
+                "key_recommendation": response.get("key_recommendation", ""),
+            }
+            return critique
+
+        except OpenRouterError as e:
+            logger.warning(f"Critique generation failed: {e}")
+            return {
+                "summary": "",
+                "working_well": [],
+                "could_improve": [],
+                "key_recommendation": "",
+            }
+
+    def format_explanation(self, critique: dict) -> str:
+        """Format the critique into a readable explanation string."""
         parts = []
 
-        # Composition critique - be specific about WHY
-        if result.composition >= 0.7:
-            if features.subject_position == "rule_of_thirds":
-                parts.append("Strong use of the rule of thirds creates visual balance.")
-            elif features.subject_position == "center" and features.scene_type == "portrait":
-                parts.append("Centered framing works well for this portrait, creating symmetry and focus.")
-            elif features.background == "clean":
-                parts.append("Clean background gives the subject room to breathe.")
-            else:
-                parts.append("Well-composed frame guides the eye naturally.")
-        elif result.composition >= 0.5:
-            if features.subject_position == "center":
-                parts.append("Centered subject feels static—the eye has nowhere to travel.")
-            elif features.background == "busy":
-                parts.append("Busy background competes with the subject for attention.")
-            else:
-                parts.append("Composition is functional but lacks intentionality.")
-        else:
-            if features.subject_position == "center" and features.background == "busy":
-                parts.append("Cluttered frame with no clear visual hierarchy—the eye wanders without purpose.")
-            elif not features.main_subject:
-                parts.append("No clear focal point. The image lacks a story to tell.")
-            else:
-                parts.append("Weak composition undermines an otherwise salvageable shot.")
+        if critique.get("summary"):
+            parts.append(critique["summary"])
 
-        # Subject critique - what draws or repels the eye
-        if result.subject_strength >= 0.7:
-            if features.human_presence == "main_subject":
-                parts.append("The subject commands attention and anchors the frame.")
-            elif features.depth_of_field == "shallow":
-                parts.append("Shallow depth of field isolates the subject beautifully.")
-            else:
-                parts.append("Clear visual weight on the main subject draws the viewer in.")
-        elif result.subject_strength >= 0.5:
-            if features.background == "busy":
-                parts.append("Subject gets lost in the visual noise.")
-            elif features.depth_of_field == "deep":
-                parts.append("Everything is in focus, but nothing stands out.")
-            else:
-                parts.append("The subject lacks punch—it doesn't demand attention.")
-        else:
-            parts.append("The subject fails to assert itself. Ask: what is this photo actually about?")
+        if critique.get("working_well"):
+            strengths = critique["working_well"][:2]  # Top 2 strengths
+            parts.append("**What's working:** " + " ".join(strengths))
 
-        # Visual appeal / emotional impact
-        if result.visual_appeal >= 0.7:
-            if features.lighting == "golden_hour":
-                parts.append("Golden hour light adds warmth and emotion.")
-            elif features.color_palette == "vibrant":
-                parts.append("Rich, vibrant colors give the image energy.")
-            elif features.lighting == "natural_soft":
-                parts.append("Soft, diffused light flatters the scene.")
-            else:
-                parts.append("There's something compelling here that rewards a second look.")
-        elif result.visual_appeal >= 0.5:
-            if features.color_palette == "muted":
-                parts.append("Muted tones feel flat—the image lacks vibrancy.")
-            elif features.lighting == "artificial":
-                parts.append("Artificial lighting gives it a sterile, uninspired feel.")
-            elif features.time_of_day == "midday":
-                parts.append("Harsh midday light robs the scene of mood.")
-            else:
-                parts.append("Pleasant enough, but forgettable. It doesn't evoke emotion.")
-        else:
-            if features.lighting == "natural_harsh":
-                parts.append("Unflattering light creates harsh shadows and blown highlights.")
-            else:
-                parts.append("Visually uninteresting. Nothing here makes me want to linger.")
+        if critique.get("could_improve"):
+            improvements = critique["could_improve"][:2]  # Top 2 improvements
+            parts.append("**Could improve:** " + " ".join(improvements))
 
-        # Technical assessment - brief, pointed
-        tech_issues = []
-        if result.sharpness < 0.5:
-            if "blur" in str(features.technical_issues).lower():
-                tech_issues.append("motion blur softens critical details")
-            else:
-                tech_issues.append("lacks critical sharpness")
-        if result.exposure < 0.5:
-            if "overexposed" in str(features.technical_issues).lower():
-                tech_issues.append("blown highlights lose information")
-            elif "underexposed" in str(features.technical_issues).lower():
-                tech_issues.append("muddy shadows obscure detail")
-            else:
-                tech_issues.append("exposure misses the mark")
-        if result.noise_level < 0.5:
-            tech_issues.append("visible noise degrades quality")
+        return "\n\n".join(parts) if parts else "Unable to generate critique."
 
-        if tech_issues:
-            parts.append(f"Technical issues: {', '.join(tech_issues)}.")
-        elif result.sharpness >= 0.7 and result.exposure >= 0.7 and result.noise_level >= 0.7:
-            parts.append("Technically clean execution.")
-
-        # Final verdict based on the gap between potential and execution
-        aes_avg = (result.composition + result.subject_strength + result.visual_appeal) / 3
-        tech_avg = (result.sharpness + result.exposure + result.noise_level) / 3
-
-        if result.final_score >= 75:
-            if aes_avg > tech_avg:
-                parts.append("A photographer's eye elevated this beyond a snapshot.")
-            else:
-                parts.append("Technical craft and creative vision align here.")
-        elif result.final_score >= 60:
-            if tech_avg - aes_avg > 0.12:
-                parts.append("The camera did its job, but where's the photographer?")
-            elif aes_avg - tech_avg > 0.12:
-                parts.append("Good instincts let down by technical execution.")
-            else:
-                parts.append("Competent but safe. Nothing ventured, nothing gained.")
-        else:
-            if tech_avg < 0.5 and aes_avg < 0.5:
-                parts.append("Both vision and execution need work.")
-            elif tech_avg < 0.5:
-                parts.append("There might be a photo here, but technical flaws bury it.")
-            else:
-                parts.append("Technically adequate but creatively empty.")
-
-        return " ".join(parts)
-
-    def generate_improvements(self, result: CompositeResult) -> list[str]:
-        """Generate actionable improvement recommendations.
-
-        Provides specific editing and composition suggestions based on scores and features.
-        """
+    def format_improvements(self, critique: dict) -> list[str]:
+        """Extract improvements from the critique."""
         improvements = []
-        features = result.features
 
-        # Composition improvements
-        if result.composition < 0.5:
-            if features.subject_position == "center":
-                improvements.append(
-                    "Try the rule of thirds: crop to place your subject off-center, "
-                    "at one of the intersection points of a 3x3 grid."
-                )
-            elif features.background == "busy":
-                improvements.append(
-                    "Simplify the composition by cropping out distracting background elements."
-                )
-            else:
-                improvements.append(
-                    "Consider reframing: look for leading lines, natural frames, "
-                    "or a cleaner background to strengthen the composition."
-                )
+        # Add specific improvement suggestions
+        if critique.get("could_improve"):
+            improvements.extend(critique["could_improve"][:2])
 
-        # Subject strength improvements
-        if result.subject_strength < 0.5:
-            if features.background == "busy":
-                improvements.append(
-                    "Make the subject pop: try increasing contrast or saturation on the subject, "
-                    "or desaturate/blur the background slightly."
-                )
-            if features.depth_of_field == "deep":
-                improvements.append(
-                    "Use a wider aperture next time to blur the background "
-                    "and draw attention to your subject."
-                )
-            if not features.main_subject:
-                improvements.append(
-                    "The image lacks a clear focal point. When shooting, "
-                    "decide what story you want to tell and make that element prominent."
-                )
+        # Add key recommendation
+        if critique.get("key_recommendation"):
+            improvements.append(f"**Key recommendation:** {critique['key_recommendation']}")
 
-        # Visual appeal improvements
-        if result.visual_appeal < 0.5:
-            if features.color_palette == "muted":
-                improvements.append(
-                    "Boost vibrancy: increase saturation slightly or add warmth "
-                    "to make colors more engaging."
-                )
-            if features.lighting == "natural_harsh":
-                improvements.append(
-                    "Harsh lighting creates unflattering shadows. "
-                    "Try shooting during golden hour or use fill flash."
-                )
-            if features.lighting == "artificial":
-                improvements.append(
-                    "Adjust white balance to correct color cast from artificial lighting."
-                )
-
-        # Sharpness improvements
-        if result.sharpness < 0.5:
-            if "blur" in features.technical_issues or "motion" in str(features.technical_issues).lower():
-                improvements.append(
-                    "Image shows motion blur. Use a faster shutter speed "
-                    "or enable image stabilization. Consider a tripod for low light."
-                )
-            else:
-                improvements.append(
-                    "Apply subtle sharpening in post-processing. "
-                    "Use the 'Unsharp Mask' or 'Clarity' slider carefully."
-                )
-
-        # Exposure improvements
-        if result.exposure < 0.5:
-            if "overexposed" in str(features.technical_issues).lower():
-                improvements.append(
-                    "Highlights are blown out. Reduce exposure in post, "
-                    "or use the 'Highlights' slider to recover detail."
-                )
-            elif "underexposed" in str(features.technical_issues).lower():
-                improvements.append(
-                    "Image is too dark. Increase exposure and lift shadows, "
-                    "but watch for increased noise."
-                )
-            else:
-                improvements.append(
-                    "Fine-tune exposure: adjust the histogram so highlights "
-                    "don't clip and shadows retain detail."
-                )
-
-        # Noise improvements
-        if result.noise_level < 0.5:
-            improvements.append(
-                "Visible noise degrades quality. Apply noise reduction in post-processing, "
-                "or next time use a lower ISO setting with better lighting."
-            )
-
-        # Scene-specific improvements
-        if features.scene_type == "portrait" and features.lighting != "natural_soft":
-            improvements.append(
-                "For portraits, soft diffused lighting is most flattering. "
-                "Try shooting near a window or use a reflector."
-            )
-
-        if features.scene_type == "landscape" and features.time_of_day == "midday":
-            improvements.append(
-                "Midday light is harsh for landscapes. "
-                "Golden hour (sunrise/sunset) provides warmer, more dramatic lighting."
-            )
-
-        # Tilted horizon
-        if "tilted" in str(features.technical_issues).lower():
-            improvements.append(
-                "Straighten the horizon using the crop/rotate tool."
-            )
-
-        # If no specific improvements, give general advice
-        if not improvements:
-            if result.final_score >= 70:
-                improvements.append(
-                    "This is already a strong image. Minor tweaks like "
-                    "subtle contrast adjustments or selective sharpening could enhance it further."
-                )
-            else:
-                improvements.append(
-                    "Focus on one element to improve: either strengthen the subject, "
-                    "simplify the background, or improve the lighting."
-                )
-
-        return improvements[:3]  # Return top 3 most relevant improvements
+        return improvements if improvements else ["No specific improvements identified."]
 
     def compute_weighted_scores(self, result: CompositeResult) -> None:
         """Compute weighted composite scores from individual model scores."""
@@ -553,9 +379,10 @@ class CompositeScorer:
         # Compute weighted scores
         self.compute_weighted_scores(result)
 
-        # Generate explanation and improvements
-        result.explanation = self.generate_explanation(result)
-        result.improvements = self.generate_improvements(result)
+        # Generate LLM-based critique
+        critique = self.generate_critique(image_path, result)
+        result.explanation = self.format_explanation(critique)
+        result.improvements = self.format_improvements(critique)
 
         return result
 

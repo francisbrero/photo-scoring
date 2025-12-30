@@ -93,3 +93,55 @@ Respond with ONLY a JSON object:
 }
 
 Be concise. Use null if location cannot be determined."""
+
+# =============================================================================
+# CRITIQUE / EXPLANATION (educational feedback)
+# =============================================================================
+
+CRITIQUE_PROMPT = """You are a photography instructor reviewing this image to help the photographer improve deliberately.
+
+IMAGE CONTEXT:
+- Scene type: {scene_type}
+- Main subject: {main_subject}
+- Subject position: {subject_position}
+- Background: {background}
+- Lighting: {lighting}
+- Color palette: {color_palette}
+- Depth of field: {depth_of_field}
+- Time of day: {time_of_day}
+
+SCORES (0-1 scale):
+- Composition: {composition:.2f}
+- Subject strength: {subject_strength:.2f}
+- Visual appeal: {visual_appeal:.2f}
+- Sharpness: {sharpness:.2f}
+- Exposure: {exposure:.2f}
+- Noise level: {noise_level:.2f} (1.0 = clean)
+- Final score: {final_score:.0f}/100
+
+Write a structured critique as a photography instructor. Be educational, specific, and constructive.
+
+Respond with ONLY a JSON object:
+{{
+  "summary": "<2-3 sentences: overall assessment of the image's strengths and main limitations>",
+  "working_well": [
+    "<specific strength 1 with explanation of WHY it works>",
+    "<specific strength 2 with explanation>"
+  ],
+  "could_improve": [
+    "<specific issue 1 with concrete suggestion for improvement>",
+    "<specific issue 2 with actionable advice>"
+  ],
+  "key_recommendation": "<single most impactful thing the photographer could do differently, either in capture or post-processing>"
+}}
+
+GUIDELINES:
+- Ground observations in what you SEE in the image, not generic advice
+- Explain WHY something works or doesn't work in this specific context
+- For improvements, give concrete suggestions (e.g., "lower the camera angle", "crop from the top", "return at golden hour")
+- Acknowledge what's working before critiquing weaknesses
+- Be educational, not snarky or dismissive
+- Consider scene type when evaluating (centered subjects work for some scenes)
+- For landscapes: consider light quality, depth layering, foreground interest
+- For portraits: consider expression, background separation, eye contact
+- For architecture: consider lines, symmetry, perspective"""
