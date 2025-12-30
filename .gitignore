@@ -1,0 +1,67 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache
+.cache/
+*.cache
+
+# Photos and images
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+*.PNG
+*.heic
+*.HEIC
+*.heif
+*.HEIF
+test_photos/
+calibration_photos/
+
+# Results (keep CSV templates but ignore generated results)
+*_results.csv
+calibration_results.csv
+photo_corrections_*.json
+photo_scores_corrected_*.csv
+
+# SQLite cache
+*.db
+
+# OS
+.DS_Store
+Thumbs.db

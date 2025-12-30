@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Score Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls input[type="file"] {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            color: #eee;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .controls select, .controls button {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            color: #eee;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .controls button:hover {
+            background: #0f3460;
+        }
+        .stats {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #888;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card img {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+            cursor: pointer;
+        }
+        .card-content {
+            padding: 15px;
+        }
+        .filename {
+            font-weight: bold;
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+        .score-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .score {
+            font-size: 36px;
+            font-weight: bold;
+        }
+        .score.excellent { color: #4ade80; }
+        .score.strong { color: #a3e635; }
+        .score.competent { color: #facc15; }
+        .score.tourist { color: #fb923c; }
+        .score.flawed { color: #f87171; }
+        .score-label {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .score-label.excellent { background: #166534; }
+        .score-label.strong { background: #3f6212; }
+        .score-label.competent { background: #713f12; }
+        .score-label.tourist { background: #9a3412; }
+        .score-label.flawed { background: #991b1b; }
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .metric {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .metric-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .metric-bar {
+            height: 4px;
+            background: #1a1a2e;
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        .metric-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #0f3460);
+            border-radius: 2px;
+        }
+        .description {
+            font-size: 14px;
+            color: #ccc;
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        .tag {
+            background: #0f3460;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #aaa;
+        }
+        .location {
+            font-size: 13px;
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        .correction-form {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .correction-form h4 {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        .form-row label {
+            font-size: 12px;
+            color: #aaa;
+            width: 100px;
+        }
+        .form-row input[type="range"] {
+            flex: 1;
+            accent-color: #e94560;
+        }
+        .form-row input[type="number"] {
+            width: 60px;
+            background: #1a1a2e;
+            border: 1px solid #16213e;
+            color: #eee;
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .form-row textarea {
+            flex: 1;
+            background: #1a1a2e;
+            border: 1px solid #16213e;
+            color: #eee;
+            padding: 8px;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .btn-save {
+            background: #e94560;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+        }
+        .btn-save:hover {
+            background: #c73e54;
+        }
+        .btn-save.saved {
+            background: #4ade80;
+        }
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .lightbox.active {
+            display: flex;
+        }
+        .lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+        }
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 40px;
+            color: white;
+            cursor: pointer;
+        }
+        .export-section {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #16213e;
+            border-radius: 12px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .corrections-count {
+            color: #4ade80;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .model-scores {
+            font-size: 11px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .model-scores span {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Photo Score Viewer</h1>
+
+    <div class="controls">
+        <input type="file" id="csvInput" accept=".csv">
+        <input type="file" id="folderInput" webkitdirectory multiple style="display:none">
+        <button onclick="document.getElementById('folderInput').click()">Select Photos Folder</button>
+        <select id="sortBy" onchange="renderPhotos()">
+            <option value="score_desc">Score (High to Low)</option>
+            <option value="score_asc">Score (Low to High)</option>
+            <option value="name">Filename</option>
+            <option value="aesthetic">Aesthetic Score</option>
+            <option value="technical">Technical Score</option>
+        </select>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="grid" id="photoGrid"></div>
+
+    <div class="export-section" id="exportSection" style="display:none">
+        <div class="corrections-count" id="correctionsCount">0 corrections made</div>
+        <button class="btn-save" onclick="exportCorrections()">Export Corrections as JSON</button>
+        <button class="btn-save" style="background:#0f3460;margin-top:10px" onclick="exportCSV()">Export Updated CSV</button>
+    </div>
+
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <span class="lightbox-close">&times;</span>
+        <img id="lightboxImg" src="">
+    </div>
+
+    <script>
+        let photos = [];
+        let corrections = {};
+        let imageFiles = {};
+
+        // Load CSV
+        document.getElementById('csvInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const text = await file.text();
+            parseCSV(text);
+        });
+
+        // Load photos folder
+        document.getElementById('folderInput').addEventListener('change', (e) => {
+            const files = e.target.files;
+            for (const file of files) {
+                const name = file.name;
+                imageFiles[name] = URL.createObjectURL(file);
+                // Also try lowercase
+                imageFiles[name.toLowerCase()] = imageFiles[name];
+            }
+            renderPhotos();
+        });
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = parseCSVLine(lines[0]);
+
+            photos = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const values = parseCSVLine(lines[i]);
+                const photo = {};
+                headers.forEach((h, idx) => {
+                    photo[h] = values[idx] || '';
+                });
+                photos.push(photo);
+            }
+
+            renderPhotos();
+            document.getElementById('exportSection').style.display = 'block';
+        }
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && line[i+1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        function getScoreClass(score) {
+            if (score >= 85) return 'excellent';
+            if (score >= 70) return 'strong';
+            if (score >= 50) return 'competent';
+            if (score >= 30) return 'tourist';
+            return 'flawed';
+        }
+
+        function getScoreLabel(score) {
+            if (score >= 85) return 'Excellent';
+            if (score >= 70) return 'Strong';
+            if (score >= 50) return 'Competent';
+            if (score >= 30) return 'Tourist';
+            return 'Flawed';
+        }
+
+        function renderPhotos() {
+            const sortBy = document.getElementById('sortBy').value;
+            let sorted = [...photos];
+
+            switch(sortBy) {
+                case 'score_desc':
+                    sorted.sort((a, b) => parseFloat(b.final_score) - parseFloat(a.final_score));
+                    break;
+                case 'score_asc':
+                    sorted.sort((a, b) => parseFloat(a.final_score) - parseFloat(b.final_score));
+                    break;
+                case 'name':
+                    sorted.sort((a, b) => a.image_path.localeCompare(b.image_path));
+                    break;
+                case 'aesthetic':
+                    sorted.sort((a, b) => parseFloat(b.aesthetic_score) - parseFloat(a.aesthetic_score));
+                    break;
+                case 'technical':
+                    sorted.sort((a, b) => parseFloat(b.technical_score) - parseFloat(a.technical_score));
+                    break;
+            }
+
+            const scores = photos.map(p => parseFloat(p.final_score));
+            const avg = (scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(1);
+            const min = Math.min(...scores).toFixed(1);
+            const max = Math.max(...scores).toFixed(1);
+
+            document.getElementById('stats').innerHTML =
+                `${photos.length} photos | Avg: ${avg} | Range: ${min} - ${max}`;
+
+            const grid = document.getElementById('photoGrid');
+            grid.innerHTML = sorted.map((photo, idx) => {
+                const score = parseFloat(photo.final_score);
+                const scoreClass = getScoreClass(score);
+                const aesthetic = parseFloat(photo.aesthetic_score || 0);
+                const technical = parseFloat(photo.technical_score || 0);
+                const imgSrc = imageFiles[photo.image_path] || imageFiles[photo.image_path.toLowerCase()] || '';
+                const correction = corrections[photo.image_path] || {};
+
+                // Parse features JSON if available
+                let features = {};
+                try {
+                    if (photo.features_json) {
+                        features = JSON.parse(photo.features_json);
+                    }
+                } catch(e) {}
+
+                return `
+                    <div class="card" data-image="${photo.image_path}">
+                        ${imgSrc ?
+                            `<img src="${imgSrc}" alt="${photo.image_path}" onclick="openLightbox('${imgSrc}')">` :
+                            `<div style="height:300px;background:#0f3460;display:flex;align-items:center;justify-content:center;color:#666">
+                                No image loaded<br><small>${photo.image_path}</small>
+                            </div>`
+                        }
+                        <div class="card-content">
+                            <div class="filename">${photo.image_path}</div>
+
+                            <div class="score-row">
+                                <div class="score ${scoreClass}">${score.toFixed(1)}</div>
+                                <span class="score-label ${scoreClass}">${getScoreLabel(score)}</span>
+                            </div>
+
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-label">Aesthetic</div>
+                                    <div class="metric-value">${(aesthetic * 100).toFixed(0)}%</div>
+                                    <div class="metric-bar"><div class="metric-bar-fill" style="width:${aesthetic * 100}%"></div></div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-label">Technical</div>
+                                    <div class="metric-value">${(technical * 100).toFixed(0)}%</div>
+                                    <div class="metric-bar"><div class="metric-bar-fill" style="width:${technical * 100}%"></div></div>
+                                </div>
+                            </div>
+
+                            ${photo.description ? `<div class="description">${photo.description}</div>` : ''}
+
+                            <div class="tags">
+                                ${photo.scene_type ? `<span class="tag">${photo.scene_type}</span>` : ''}
+                                ${photo.lighting ? `<span class="tag">${photo.lighting}</span>` : ''}
+                                ${photo.subject_position ? `<span class="tag">${photo.subject_position}</span>` : ''}
+                                ${features.color_palette ? `<span class="tag">${features.color_palette}</span>` : ''}
+                                ${features.time_of_day ? `<span class="tag">${features.time_of_day}</span>` : ''}
+                            </div>
+
+                            ${photo.location_name ? `<div class="location">📍 ${photo.location_name}${photo.location_country ? ', ' + photo.location_country : ''}</div>` : ''}
+
+                            <div class="model-scores">
+                                ${photo.qwen_aesthetic ? `<span>Qwen: ${photo.qwen_aesthetic}</span>` : ''}
+                                ${photo.gpt4o_aesthetic ? `<span>GPT: ${photo.gpt4o_aesthetic}</span>` : ''}
+                                ${photo.gemini_aesthetic ? `<span>Gemini: ${photo.gemini_aesthetic}</span>` : ''}
+                            </div>
+
+                            <div class="correction-form">
+                                <h4>Your Assessment</h4>
+                                <div class="form-row">
+                                    <label>Score (0-100)</label>
+                                    <input type="range" min="0" max="100" value="${correction.score || score}"
+                                           oninput="this.nextElementSibling.value=this.value"
+                                           onchange="updateCorrection('${photo.image_path}', 'score', this.value)">
+                                    <input type="number" min="0" max="100" value="${correction.score || Math.round(score)}"
+                                           onchange="updateCorrection('${photo.image_path}', 'score', this.value); this.previousElementSibling.value=this.value">
+                                </div>
+                                <div class="form-row">
+                                    <label>Composition</label>
+                                    <input type="range" min="0" max="100" value="${correction.composition || Math.round(parseFloat(photo.composition || 0) * 100)}"
+                                           oninput="this.nextElementSibling.value=this.value"
+                                           onchange="updateCorrection('${photo.image_path}', 'composition', this.value)">
+                                    <input type="number" min="0" max="100" value="${correction.composition || Math.round(parseFloat(photo.composition || 0) * 100)}"
+                                           onchange="updateCorrection('${photo.image_path}', 'composition', this.value); this.previousElementSibling.value=this.value">
+                                </div>
+                                <div class="form-row">
+                                    <label>Subject</label>
+                                    <input type="range" min="0" max="100" value="${correction.subject || Math.round(parseFloat(photo.subject_strength || 0) * 100)}"
+                                           oninput="this.nextElementSibling.value=this.value"
+                                           onchange="updateCorrection('${photo.image_path}', 'subject', this.value)">
+                                    <input type="number" min="0" max="100" value="${correction.subject || Math.round(parseFloat(photo.subject_strength || 0) * 100)}"
+                                           onchange="updateCorrection('${photo.image_path}', 'subject', this.value); this.previousElementSibling.value=this.value">
+                                </div>
+                                <div class="form-row">
+                                    <label>Appeal</label>
+                                    <input type="range" min="0" max="100" value="${correction.appeal || Math.round(parseFloat(photo.visual_appeal || 0) * 100)}"
+                                           oninput="this.nextElementSibling.value=this.value"
+                                           onchange="updateCorrection('${photo.image_path}', 'appeal', this.value)">
+                                    <input type="number" min="0" max="100" value="${correction.appeal || Math.round(parseFloat(photo.visual_appeal || 0) * 100)}"
+                                           onchange="updateCorrection('${photo.image_path}', 'appeal', this.value); this.previousElementSibling.value=this.value">
+                                </div>
+                                <div class="form-row">
+                                    <label>Notes</label>
+                                    <textarea placeholder="Why did you adjust the score?"
+                                              onchange="updateCorrection('${photo.image_path}', 'notes', this.value)">${correction.notes || ''}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            updateCorrectionsCount();
+        }
+
+        function updateCorrection(imagePath, field, value) {
+            if (!corrections[imagePath]) {
+                corrections[imagePath] = {
+                    image_path: imagePath,
+                    timestamp: new Date().toISOString()
+                };
+                // Copy original scores
+                const photo = photos.find(p => p.image_path === imagePath);
+                if (photo) {
+                    corrections[imagePath].original_score = parseFloat(photo.final_score);
+                    corrections[imagePath].original_aesthetic = parseFloat(photo.aesthetic_score);
+                    corrections[imagePath].original_technical = parseFloat(photo.technical_score);
+                }
+            }
+            corrections[imagePath][field] = field === 'notes' ? value : parseFloat(value);
+            corrections[imagePath].timestamp = new Date().toISOString();
+            updateCorrectionsCount();
+
+            // Save to localStorage
+            localStorage.setItem('photo_corrections', JSON.stringify(corrections));
+        }
+
+        function updateCorrectionsCount() {
+            const count = Object.keys(corrections).length;
+            document.getElementById('correctionsCount').textContent =
+                `${count} correction${count !== 1 ? 's' : ''} made`;
+        }
+
+        function exportCorrections() {
+            const data = {
+                exported_at: new Date().toISOString(),
+                total_photos: photos.length,
+                corrections_count: Object.keys(corrections).length,
+                corrections: Object.values(corrections)
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `photo_corrections_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportCSV() {
+            // Create updated CSV with corrections
+            const headers = Object.keys(photos[0]).concat(['human_score', 'human_composition', 'human_subject', 'human_appeal', 'human_notes']);
+
+            let csv = headers.join(',') + '\n';
+
+            for (const photo of photos) {
+                const correction = corrections[photo.image_path] || {};
+                const row = headers.map(h => {
+                    let val;
+                    if (h === 'human_score') val = correction.score || '';
+                    else if (h === 'human_composition') val = correction.composition || '';
+                    else if (h === 'human_subject') val = correction.subject || '';
+                    else if (h === 'human_appeal') val = correction.appeal || '';
+                    else if (h === 'human_notes') val = correction.notes || '';
+                    else val = photo[h] || '';
+
+                    // Escape CSV
+                    if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+                        val = '"' + val.replace(/"/g, '""') + '"';
+                    }
+                    return val;
+                });
+                csv += row.join(',') + '\n';
+            }
+
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `photo_scores_corrected_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function openLightbox(src) {
+            document.getElementById('lightboxImg').src = src;
+            document.getElementById('lightbox').classList.add('active');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeLightbox();
+        });
+
+        // Load saved corrections from localStorage
+        const saved = localStorage.getItem('photo_corrections');
+        if (saved) {
+            try {
+                corrections = JSON.parse(saved);
+            } catch(e) {}
+        }
+    </script>
+</body>
+</html>
