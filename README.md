@@ -239,7 +239,11 @@ Using 3 models for scoring provides:
 | Metadata | Pixtral 12B | - | $0.10 |
 | Critique | Gemini 2.5 Flash | - | $0.30 |
 
-**Cost per image:** ~$0.003 (9 API calls)
+**Cost per image:** ~$0.004 (9 API calls)
+
+**Batch costs:**
+- 100 images: ~$0.44
+- 1,000 images: ~$4.40
 
 ---
 

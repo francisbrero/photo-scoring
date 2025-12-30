@@ -458,7 +458,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             </div>
                             ${photo.location_name ? `<div class="location">📍 ${photo.location_name}${photo.location_country ? ', ' + photo.location_country : ''}</div>` : ''}
                             <div class="score-row" style="margin-bottom:10px">
-                                <span class="cost-badge">💰 ~$0.003 LLM cost</span>
+                                <span class="cost-badge">💰 ~$0.004 LLM cost</span>
                             </div>
                             ${photo.explanation ? `
                                 <div class="expandable open" onclick="this.classList.toggle('open')">
