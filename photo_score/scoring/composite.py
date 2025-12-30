@@ -31,9 +31,9 @@ MODELS = {
         ("google/gemini-2.5-flash", 0.50),
     ],
     "metadata": "mistralai/pixtral-12b",                # ~$0.0003/call
-    "critique": "google/gemini-2.5-flash",              # ~$0.0008/call
+    "critique": "google/gemini-3-flash-preview",        # ~$0.002/call - SOTA for reasoning
 }
-# Total: 7 API calls, ~$0.004/image
+# Total: 7 API calls, ~$0.005/image
 
 
 @dataclass

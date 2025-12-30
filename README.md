@@ -90,7 +90,7 @@ Each image goes through a 7-step pipeline:
 │  6. METADATA EXTRACTION (Pixtral 12B)                                       │
 │     └─> description, location_name, location_country                        │
 │                                                                              │
-│  7. CRITIQUE GENERATION (Gemini 2.5 Flash)                                  │
+│  7. CRITIQUE GENERATION (Gemini 3 Flash - SOTA)                             │
 │     └─> summary, strengths, improvements, key_recommendation                │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -233,15 +233,15 @@ Using 3 models for scoring provides:
 | Technical Scoring | Qwen 2.5 VL 72B | 50% | ~$0.0002 |
 | Technical Scoring | Gemini 2.5 Flash | 50% | ~$0.0008 |
 | Metadata | Pixtral 12B | - | ~$0.0003 |
-| Critique | Gemini 2.5 Flash | - | ~$0.0008 |
+| Critique | **Gemini 3 Flash** | - | ~$0.002 |
 
-**Cost per image:** ~$0.004 (7 API calls)
+**Cost per image:** ~$0.005 (7 API calls)
 
 **Batch costs:**
-- 100 images: ~$0.40
-- 1,000 images: ~$4.00
+- 100 images: ~$0.50
+- 1,000 images: ~$5.00
 
-> **Note:** GPT-4o-mini was removed from the default config because it encodes images as ~37,000 tokens (vs ~3,000 for other models), making it 10x more expensive per call without improving score quality.
+> **Note:** Gemini 3 Flash Preview is used for critiques due to superior reasoning. GPT-4o-mini was removed because it encodes images as ~37,000 tokens (vs ~3,000 for other models), making it 10x more expensive without improving quality.
 
 ---
 
