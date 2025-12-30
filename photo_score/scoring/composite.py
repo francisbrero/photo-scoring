@@ -196,63 +196,127 @@ class CompositeScorer:
             return ("", None, None)
 
     def generate_explanation(self, result: CompositeResult) -> str:
-        """Generate a human-readable explanation of the score.
+        """Generate a specific, opinionated critique of the image.
 
-        Highlights the most impactful positive and negative attributes.
+        Uses photography critique vocabulary to explain exactly why the image
+        scores the way it does, with concrete observations.
         """
-        # Collect all scores with their names and values
-        scores = [
-            ("composition", result.composition, "aesthetic"),
-            ("subject strength", result.subject_strength, "aesthetic"),
-            ("visual appeal", result.visual_appeal, "aesthetic"),
-            ("sharpness", result.sharpness, "technical"),
-            ("exposure", result.exposure, "technical"),
-            ("noise control", result.noise_level, "technical"),
-        ]
-
-        # Sort by value
-        sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
-
-        # Find strengths (>= 0.65) and weaknesses (< 0.5)
-        strengths = [(name, val) for name, val, _ in sorted_scores if val >= 0.65]
-        weaknesses = [(name, val) for name, val, _ in sorted_scores if val < 0.5]
-
+        features = result.features
         parts = []
 
-        # Score tier
-        if result.final_score >= 85:
-            parts.append("Excellent shot.")
-        elif result.final_score >= 70:
-            parts.append("Strong image.")
-        elif result.final_score >= 55:
-            parts.append("Solid photo.")
-        elif result.final_score >= 40:
-            parts.append("Average snapshot.")
-        else:
-            parts.append("Needs improvement.")
-
-        # Top strengths
-        if strengths:
-            top_strengths = strengths[:2]
-            strength_text = " and ".join([s[0] for s in top_strengths])
-            parts.append(f"Stands out for its {strength_text}.")
-
-        # Weaknesses
-        if weaknesses:
-            worst = min(weaknesses, key=lambda x: x[1])
-            if worst[1] < 0.35:
-                parts.append(f"Significantly held back by weak {worst[0]}.")
+        # Composition critique - be specific about WHY
+        if result.composition >= 0.7:
+            if features.subject_position == "rule_of_thirds":
+                parts.append("Strong use of the rule of thirds creates visual balance.")
+            elif features.subject_position == "center" and features.scene_type == "portrait":
+                parts.append("Centered framing works well for this portrait, creating symmetry and focus.")
+            elif features.background == "clean":
+                parts.append("Clean background gives the subject room to breathe.")
             else:
-                parts.append(f"Could improve {worst[0]}.")
+                parts.append("Well-composed frame guides the eye naturally.")
+        elif result.composition >= 0.5:
+            if features.subject_position == "center":
+                parts.append("Centered subject feels static—the eye has nowhere to travel.")
+            elif features.background == "busy":
+                parts.append("Busy background competes with the subject for attention.")
+            else:
+                parts.append("Composition is functional but lacks intentionality.")
+        else:
+            if features.subject_position == "center" and features.background == "busy":
+                parts.append("Cluttered frame with no clear visual hierarchy—the eye wanders without purpose.")
+            elif not features.main_subject:
+                parts.append("No clear focal point. The image lacks a story to tell.")
+            else:
+                parts.append("Weak composition undermines an otherwise salvageable shot.")
 
-        # Aesthetic vs technical balance
+        # Subject critique - what draws or repels the eye
+        if result.subject_strength >= 0.7:
+            if features.human_presence == "main_subject":
+                parts.append("The subject commands attention and anchors the frame.")
+            elif features.depth_of_field == "shallow":
+                parts.append("Shallow depth of field isolates the subject beautifully.")
+            else:
+                parts.append("Clear visual weight on the main subject draws the viewer in.")
+        elif result.subject_strength >= 0.5:
+            if features.background == "busy":
+                parts.append("Subject gets lost in the visual noise.")
+            elif features.depth_of_field == "deep":
+                parts.append("Everything is in focus, but nothing stands out.")
+            else:
+                parts.append("The subject lacks punch—it doesn't demand attention.")
+        else:
+            parts.append("The subject fails to assert itself. Ask: what is this photo actually about?")
+
+        # Visual appeal / emotional impact
+        if result.visual_appeal >= 0.7:
+            if features.lighting == "golden_hour":
+                parts.append("Golden hour light adds warmth and emotion.")
+            elif features.color_palette == "vibrant":
+                parts.append("Rich, vibrant colors give the image energy.")
+            elif features.lighting == "natural_soft":
+                parts.append("Soft, diffused light flatters the scene.")
+            else:
+                parts.append("There's something compelling here that rewards a second look.")
+        elif result.visual_appeal >= 0.5:
+            if features.color_palette == "muted":
+                parts.append("Muted tones feel flat—the image lacks vibrancy.")
+            elif features.lighting == "artificial":
+                parts.append("Artificial lighting gives it a sterile, uninspired feel.")
+            elif features.time_of_day == "midday":
+                parts.append("Harsh midday light robs the scene of mood.")
+            else:
+                parts.append("Pleasant enough, but forgettable. It doesn't evoke emotion.")
+        else:
+            if features.lighting == "natural_harsh":
+                parts.append("Unflattering light creates harsh shadows and blown highlights.")
+            else:
+                parts.append("Visually uninteresting. Nothing here makes me want to linger.")
+
+        # Technical assessment - brief, pointed
+        tech_issues = []
+        if result.sharpness < 0.5:
+            if "blur" in str(features.technical_issues).lower():
+                tech_issues.append("motion blur softens critical details")
+            else:
+                tech_issues.append("lacks critical sharpness")
+        if result.exposure < 0.5:
+            if "overexposed" in str(features.technical_issues).lower():
+                tech_issues.append("blown highlights lose information")
+            elif "underexposed" in str(features.technical_issues).lower():
+                tech_issues.append("muddy shadows obscure detail")
+            else:
+                tech_issues.append("exposure misses the mark")
+        if result.noise_level < 0.5:
+            tech_issues.append("visible noise degrades quality")
+
+        if tech_issues:
+            parts.append(f"Technical issues: {', '.join(tech_issues)}.")
+        elif result.sharpness >= 0.7 and result.exposure >= 0.7 and result.noise_level >= 0.7:
+            parts.append("Technically clean execution.")
+
+        # Final verdict based on the gap between potential and execution
         aes_avg = (result.composition + result.subject_strength + result.visual_appeal) / 3
         tech_avg = (result.sharpness + result.exposure + result.noise_level) / 3
 
-        if tech_avg - aes_avg > 0.15:
-            parts.append("Technically proficient but lacks artistic impact.")
-        elif aes_avg - tech_avg > 0.15:
-            parts.append("Good creative vision, but technical execution could be better.")
+        if result.final_score >= 75:
+            if aes_avg > tech_avg:
+                parts.append("A photographer's eye elevated this beyond a snapshot.")
+            else:
+                parts.append("Technical craft and creative vision align here.")
+        elif result.final_score >= 60:
+            if tech_avg - aes_avg > 0.12:
+                parts.append("The camera did its job, but where's the photographer?")
+            elif aes_avg - tech_avg > 0.12:
+                parts.append("Good instincts let down by technical execution.")
+            else:
+                parts.append("Competent but safe. Nothing ventured, nothing gained.")
+        else:
+            if tech_avg < 0.5 and aes_avg < 0.5:
+                parts.append("Both vision and execution need work.")
+            elif tech_avg < 0.5:
+                parts.append("There might be a photo here, but technical flaws bury it.")
+            else:
+                parts.append("Technically adequate but creatively empty.")
 
         return " ".join(parts)
 
