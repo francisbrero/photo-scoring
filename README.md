@@ -67,32 +67,30 @@ Open http://localhost:8080 to:
 
 ### Processing Pipeline
 
-Each image goes through a 9-step pipeline:
+Each image goes through a 7-step pipeline:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           IMAGE PROCESSING PIPELINE                          │
+│                      IMAGE PROCESSING PIPELINE (7 calls)                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  1. FEATURE EXTRACTION (Pixtral 12B)                                        │
 │     └─> scene_type, subject_position, lighting, background, etc.            │
 │                                                                              │
-│  2-4. AESTHETIC SCORING (3 models in parallel)                              │
-│     ├─> Qwen 2.5 VL 72B (35% weight)                                        │
-│     ├─> GPT-4o-mini (35% weight)                                            │
-│     └─> Gemini 2.5 Flash (30% weight)                                       │
+│  2-3. AESTHETIC SCORING (2 models)                                          │
+│     ├─> Qwen 2.5 VL 72B (50% weight)                                        │
+│     └─> Gemini 2.5 Flash (50% weight)                                       │
 │         └─> composition, subject_strength, visual_appeal (0-1 each)         │
 │                                                                              │
-│  5-7. TECHNICAL SCORING (3 models in parallel)                              │
-│     ├─> Qwen 2.5 VL 72B (35% weight)                                        │
-│     ├─> GPT-4o-mini (35% weight)                                            │
-│     └─> Gemini 2.5 Flash (30% weight)                                       │
+│  4-5. TECHNICAL SCORING (2 models)                                          │
+│     ├─> Qwen 2.5 VL 72B (50% weight)                                        │
+│     └─> Gemini 2.5 Flash (50% weight)                                       │
 │         └─> sharpness, exposure, noise_level (0-1 each)                     │
 │                                                                              │
-│  8. METADATA EXTRACTION (Pixtral 12B)                                       │
+│  6. METADATA EXTRACTION (Pixtral 12B)                                       │
 │     └─> description, location_name, location_country                        │
 │                                                                              │
-│  9. CRITIQUE GENERATION (Gemini 2.5 Flash)                                  │
+│  7. CRITIQUE GENERATION (Gemini 2.5 Flash)                                  │
 │     └─> summary, strengths, improvements, key_recommendation                │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -227,25 +225,23 @@ Using 3 models for scoring provides:
 
 ## Model Configuration
 
-| Task | Model | Weight | Cost/M tokens |
-|------|-------|--------|---------------|
-| Feature Extraction | Pixtral 12B | - | $0.10 |
-| Aesthetic Scoring | Qwen 2.5 VL 72B | 35% | $0.07 |
-| Aesthetic Scoring | GPT-4o-mini | 35% | $0.15 |
-| Aesthetic Scoring | Gemini 2.5 Flash | 30% | $0.30 |
-| Technical Scoring | Qwen 2.5 VL 72B | 35% | $0.07 |
-| Technical Scoring | GPT-4o-mini | 35% | $0.15 |
-| Technical Scoring | Gemini 2.5 Flash | 30% | $0.30 |
-| Metadata | Pixtral 12B | - | $0.10 |
-| Critique | Gemini 2.5 Flash | - | $0.30 |
+| Task | Model | Weight | Cost/call |
+|------|-------|--------|-----------|
+| Feature Extraction | Pixtral 12B | - | ~$0.0003 |
+| Aesthetic Scoring | Qwen 2.5 VL 72B | 50% | ~$0.0002 |
+| Aesthetic Scoring | Gemini 2.5 Flash | 50% | ~$0.0008 |
+| Technical Scoring | Qwen 2.5 VL 72B | 50% | ~$0.0002 |
+| Technical Scoring | Gemini 2.5 Flash | 50% | ~$0.0008 |
+| Metadata | Pixtral 12B | - | ~$0.0003 |
+| Critique | Gemini 2.5 Flash | - | ~$0.0008 |
 
-**Cost per image:** ~$0.015 (9 API calls)
+**Cost per image:** ~$0.004 (7 API calls)
 
 **Batch costs:**
-- 100 images: ~$1.50
-- 1,000 images: ~$15.00
+- 100 images: ~$0.40
+- 1,000 images: ~$4.00
 
-> **Note:** GPT-4o-mini encodes images as ~37,000 tokens, accounting for ~77% of the cost. Consider replacing with a cheaper vision model if cost is a concern.
+> **Note:** GPT-4o-mini was removed from the default config because it encodes images as ~37,000 tokens (vs ~3,000 for other models), making it 10x more expensive per call without improving score quality.
 
 ---
 

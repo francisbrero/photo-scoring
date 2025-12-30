@@ -18,21 +18,22 @@ from photo_score.inference.prompts_v2 import (
 logger = logging.getLogger(__name__)
 
 # Model configuration for composite scoring
+# Using Qwen + Gemini (no GPT-4o-mini) for 73% cost reduction
+# GPT-4o-mini encodes images as ~37K tokens vs ~3K for others
 MODELS = {
-    "feature_extraction": "mistralai/pixtral-12b",      # $0.10/M - cheap, detailed
+    "feature_extraction": "mistralai/pixtral-12b",      # ~$0.0003/call
     "aesthetic_scorers": [
-        ("qwen/qwen2.5-vl-72b-instruct", 0.35),         # $0.07/M - cheapest
-        ("openai/gpt-4o-mini", 0.35),                    # $0.15/M - good calibration
-        ("google/gemini-2.5-flash", 0.30),              # $0.30/M - fast
+        ("qwen/qwen2.5-vl-72b-instruct", 0.50),         # ~$0.0002/call
+        ("google/gemini-2.5-flash", 0.50),              # ~$0.0008/call
     ],
     "technical_scorers": [
-        ("qwen/qwen2.5-vl-72b-instruct", 0.35),
-        ("openai/gpt-4o-mini", 0.35),
-        ("google/gemini-2.5-flash", 0.30),
+        ("qwen/qwen2.5-vl-72b-instruct", 0.50),
+        ("google/gemini-2.5-flash", 0.50),
     ],
-    "metadata": "mistralai/pixtral-12b",                # $0.10/M - cheap
-    "critique": "google/gemini-2.5-flash",              # $0.30/M - good reasoning
+    "metadata": "mistralai/pixtral-12b",                # ~$0.0003/call
+    "critique": "google/gemini-2.5-flash",              # ~$0.0008/call
 }
+# Total: 7 API calls, ~$0.004/image
 
 
 @dataclass
