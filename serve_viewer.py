@@ -154,41 +154,91 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #aaa;
         }
         .location { font-size: 13px; color: #e94560; margin-bottom: 10px; }
-        .explanation {
+        .expandable {
             background: #0f3460;
-            padding: 12px;
             border-radius: 8px;
             margin-bottom: 15px;
+            overflow: hidden;
+        }
+        .expandable-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .expandable-header:hover { background: rgba(255,255,255,0.05); }
+        .expandable-title {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .expandable-toggle {
+            font-size: 12px;
+            color: #e94560;
+            transition: transform 0.2s;
+        }
+        .expandable.open .expandable-toggle { transform: rotate(180deg); }
+        .expandable-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .expandable.open .expandable-content {
+            max-height: 2000px;
+        }
+        .explanation {
+            padding: 0 12px 12px 12px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+        .explanation p { margin-bottom: 12px; }
+        .explanation strong { color: #e94560; }
+        .explanation-summary {
+            padding: 12px;
             font-size: 14px;
             line-height: 1.5;
             color: #ccc;
             border-left: 3px solid #e94560;
+            background: rgba(233, 69, 96, 0.1);
+            margin: 0 12px 12px 12px;
+            border-radius: 0 8px 8px 0;
         }
         .improvements {
             background: #1a1a2e;
-            padding: 12px;
             border-radius: 8px;
             margin-bottom: 15px;
+            overflow: hidden;
         }
-        .improvements h5 {
-            font-size: 11px;
-            color: #888;
-            text-transform: uppercase;
-            margin-bottom: 8px;
+        .improvements-content {
+            padding: 0 12px 12px 12px;
         }
         .improvement-item {
             font-size: 13px;
             color: #aaa;
-            padding: 8px 0;
+            padding: 10px 12px;
             border-bottom: 1px solid #16213e;
-            line-height: 1.4;
+            line-height: 1.5;
+            background: #0f3460;
+            border-radius: 6px;
+            margin-bottom: 8px;
         }
         .improvement-item:last-child {
             border-bottom: none;
+            margin-bottom: 0;
         }
-        .improvement-item::before {
-            content: "💡";
-            margin-right: 8px;
+        .improvement-item strong { color: #4ade80; }
+        .cost-badge {
+            display: inline-block;
+            background: #0f3460;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            color: #4ade80;
+            margin-left: 10px;
         }
         .correction-form {
             background: #0f3460;
@@ -301,6 +351,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const photos = PHOTOS_DATA;
         let corrections = {};
 
+        function formatExplanation(text) {
+            if (!text) return '';
+            // Convert markdown-style formatting to HTML
+            return text
+                // Convert **bold** to <strong>
+                .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+                // Convert newlines to paragraphs
+                .split('\\n\\n')
+                .map(p => p.trim())
+                .filter(p => p)
+                .map(p => `<p>${p}</p>`)
+                .join('');
+        }
+
+        function formatImprovement(text) {
+            if (!text) return '';
+            // Convert **bold** to <strong>
+            return text.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+        }
+
         function getScoreClass(score) {
             if (score >= 85) return 'excellent';
             if (score >= 70) return 'strong';
@@ -387,11 +457,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                 ${features.color_palette ? `<span class="tag">${features.color_palette}</span>` : ''}
                             </div>
                             ${photo.location_name ? `<div class="location">📍 ${photo.location_name}${photo.location_country ? ', ' + photo.location_country : ''}</div>` : ''}
-                            ${photo.explanation ? `<div class="explanation">${photo.explanation}</div>` : ''}
+                            <div class="score-row" style="margin-bottom:10px">
+                                <span class="cost-badge">💰 ~$0.003 LLM cost</span>
+                            </div>
+                            ${photo.explanation ? `
+                                <div class="expandable open" onclick="this.classList.toggle('open')">
+                                    <div class="expandable-header">
+                                        <span class="expandable-title">📝 Critique</span>
+                                        <span class="expandable-toggle">▼</span>
+                                    </div>
+                                    <div class="expandable-content">
+                                        <div class="explanation">${formatExplanation(photo.explanation)}</div>
+                                    </div>
+                                </div>
+                            ` : ''}
                             ${photo.improvements ? `
-                                <div class="improvements">
-                                    <h5>How to Improve</h5>
-                                    ${photo.improvements.split(' | ').map(imp => `<div class="improvement-item">${imp}</div>`).join('')}
+                                <div class="expandable" onclick="this.classList.toggle('open')">
+                                    <div class="expandable-header">
+                                        <span class="expandable-title">💡 How to Improve</span>
+                                        <span class="expandable-toggle">▼</span>
+                                    </div>
+                                    <div class="expandable-content">
+                                        <div class="improvements-content">
+                                            ${photo.improvements.split(' | ').map(imp => `<div class="improvement-item">${formatImprovement(imp)}</div>`).join('')}
+                                        </div>
+                                    </div>
                                 </div>
                             ` : ''}
                             <div class="model-scores">
