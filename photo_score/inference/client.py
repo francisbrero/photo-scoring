@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import ValidationError
 
 # Register HEIC/HEIF support
@@ -72,6 +72,9 @@ class OpenRouterClient:
             Tuple of (base64_data, media_type)
         """
         with Image.open(image_path) as img:
+            # Apply EXIF orientation (fixes rotated images from phones)
+            img = ImageOps.exif_transpose(img)
+
             # Convert to RGB if needed (handles RGBA, P mode, etc.)
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
