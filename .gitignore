@@ -53,9 +53,8 @@ ENV/
 test_photos/
 calibration_photos/
 
-# Results (keep CSV templates but ignore generated results)
-*_results.csv
-calibration_results.csv
+# Results - ignore all generated CSV files
+*.csv
 photo_corrections_*.json
 photo_scores_corrected_*.csv
 
