@@ -154,6 +154,42 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #aaa;
         }
         .location { font-size: 13px; color: #e94560; margin-bottom: 10px; }
+        .explanation {
+            background: #0f3460;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #ccc;
+            border-left: 3px solid #e94560;
+        }
+        .improvements {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .improvements h5 {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .improvement-item {
+            font-size: 13px;
+            color: #aaa;
+            padding: 8px 0;
+            border-bottom: 1px solid #16213e;
+            line-height: 1.4;
+        }
+        .improvement-item:last-child {
+            border-bottom: none;
+        }
+        .improvement-item::before {
+            content: "💡";
+            margin-right: 8px;
+        }
         .correction-form {
             background: #0f3460;
             padding: 15px;
@@ -351,6 +387,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                 ${features.color_palette ? `<span class="tag">${features.color_palette}</span>` : ''}
                             </div>
                             ${photo.location_name ? `<div class="location">📍 ${photo.location_name}${photo.location_country ? ', ' + photo.location_country : ''}</div>` : ''}
+                            ${photo.explanation ? `<div class="explanation">${photo.explanation}</div>` : ''}
+                            ${photo.improvements ? `
+                                <div class="improvements">
+                                    <h5>How to Improve</h5>
+                                    ${photo.improvements.split(' | ').map(imp => `<div class="improvement-item">${imp}</div>`).join('')}
+                                </div>
+                            ` : ''}
                             <div class="model-scores">
                                 ${photo.qwen_aesthetic ? `<span>Qwen: ${photo.qwen_aesthetic}</span>` : ''}
                                 ${photo.gpt4o_aesthetic ? `<span>GPT: ${photo.gpt4o_aesthetic}</span>` : ''}
