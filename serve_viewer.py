@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Register HEIC support
 try:
@@ -461,7 +461,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                 <span class="cost-badge">💰 ~$0.005 LLM cost</span>
                             </div>
                             ${photo.explanation ? `
-                                <div class="expandable open" onclick="this.classList.toggle('open')">
+                                <div class="expandable" onclick="this.classList.toggle('open')">
                                     <div class="expandable-header">
                                         <span class="expandable-title">📝 Critique</span>
                                         <span class="expandable-toggle">▼</span>
@@ -649,6 +649,9 @@ def convert_image_to_jpeg(filepath: Path) -> bytes:
         return image_cache[str(filepath)]
 
     with Image.open(filepath) as img:
+        # Apply EXIF orientation (fixes rotated HEIC images)
+        img = ImageOps.exif_transpose(img)
+
         # Convert to RGB if needed
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
