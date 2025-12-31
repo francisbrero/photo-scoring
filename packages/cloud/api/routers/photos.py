@@ -609,6 +609,105 @@ async def score_photo(
     )
 
 
+@router.post("/{photo_id}/regenerate")
+async def regenerate_explanation(
+    photo_id: str,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Regenerate explanation and improvements for a scored photo.
+
+    This is a free operation that uses the existing model_scores
+    to generate critique and improvement suggestions.
+    """
+    # Get photo with existing scores
+    result = (
+        supabase.table("scored_photos")
+        .select("*")
+        .eq("id", photo_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found",
+        )
+
+    photo = result.data[0]
+    model_scores = photo.get("model_scores") or {}
+
+    if not model_scores:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Photo has no scores to regenerate from",
+        )
+
+    # Generate explanation and improvements from existing scores
+    inference_service = OpenRouterService()
+    final_score = photo.get("final_score") or 0
+
+    explanation = inference_service.generate_explanation(model_scores, final_score)
+    improvements = inference_service.generate_improvements(model_scores)
+
+    # Update the photo
+    supabase.table("scored_photos").update(
+        {
+            "explanation": explanation,
+            "improvements": improvements,
+            "updated_at": "now()",
+        }
+    ).eq("id", photo_id).execute()
+
+    return {"message": "Explanation and improvements regenerated", "id": photo_id}
+
+
+@router.post("/regenerate-all")
+async def regenerate_all_explanations(
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Regenerate explanation and improvements for all scored photos.
+
+    This is a free operation that uses existing model_scores.
+    """
+    # Get all scored photos for user
+    result = (
+        supabase.table("scored_photos")
+        .select("id, final_score, model_scores")
+        .eq("user_id", user.id)
+        .not_.is_("final_score", "null")
+        .execute()
+    )
+
+    if not result.data:
+        return {"message": "No scored photos found", "updated": 0}
+
+    inference_service = OpenRouterService()
+    updated = 0
+
+    for photo in result.data:
+        model_scores = photo.get("model_scores") or {}
+        if not model_scores:
+            continue
+
+        final_score = photo.get("final_score") or 0
+        explanation = inference_service.generate_explanation(model_scores, final_score)
+        improvements = inference_service.generate_improvements(model_scores)
+
+        supabase.table("scored_photos").update(
+            {
+                "explanation": explanation,
+                "improvements": improvements,
+                "updated_at": "now()",
+            }
+        ).eq("id", photo["id"]).execute()
+        updated += 1
+
+    return {"message": f"Regenerated {updated} photos", "updated": updated}
+
+
 @router.get("/serve/{path:path}")
 async def serve_photo_by_path(
     path: str,
