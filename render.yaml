@@ -18,3 +18,13 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID_100
+        sync: false
+      - key: STRIPE_PRICE_ID_500
+        sync: false
+      - key: STRIPE_PRICE_ID_2000
+        sync: false

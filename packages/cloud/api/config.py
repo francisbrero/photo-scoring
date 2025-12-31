@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     # OpenRouter API for inference
     openrouter_api_key: str
 
+    # Stripe configuration
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_100: str = ""
+    stripe_price_id_500: str = ""
+    stripe_price_id_2000: str = ""
+
     # Application settings
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import auth
+from .routers import auth, billing
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
+    app.include_router(billing.router, prefix="/billing", tags=["billing"])
 
     return app
 
