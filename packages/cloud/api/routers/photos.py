@@ -300,6 +300,8 @@ async def upload_photo(
     The photo is stored in Supabase Storage and a record is created
     in the scored_photos table. Scoring is done separately via the
     /photos/{id}/score endpoint.
+
+    HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
     """
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"]
@@ -308,11 +310,6 @@ async def upload_photo(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type not supported. Use: {', '.join(allowed_types)}",
         )
-
-    # Generate unique filename
-    file_ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
-    unique_id = str(uuid.uuid4())
-    storage_path = f"{user.id}/{unique_id}.{file_ext}"
 
     # Read file content
     content = await file.read()
@@ -325,12 +322,48 @@ async def upload_photo(
             detail="File size exceeds 50MB limit",
         )
 
+    # Convert HEIC/HEIF to JPEG for browser compatibility
+    content_type = file.content_type
+    file_ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else "jpg"
+
+    if content_type in ["image/heic", "image/heif"] or file_ext in ["heic", "heif"]:
+        from io import BytesIO
+        from PIL import Image, ImageOps
+
+        try:
+            # pillow-heif is registered in openrouter service
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
+
+        try:
+            img = Image.open(BytesIO(content))
+            img = ImageOps.exif_transpose(img)  # Fix orientation
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=90)
+            content = buffer.getvalue()
+            content_type = "image/jpeg"
+            file_ext = "jpg"
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to process HEIC image: {str(e)}",
+            ) from e
+
+    # Generate unique filename
+    unique_id = str(uuid.uuid4())
+    storage_path = f"{user.id}/{unique_id}.{file_ext}"
+
     # Upload to Supabase Storage
     try:
         supabase.storage.from_("photos").upload(
             storage_path,
             content,
-            {"content-type": file.content_type},
+            {"content-type": content_type},
         )
     except Exception as e:
         raise HTTPException(

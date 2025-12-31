@@ -74,22 +74,28 @@ export function PhotoCard({
   // Use the signed URL from the API response
   const imageSrc = photo.image_url;
 
-  // Don't render if no image URL or image failed to load
-  if (!imageSrc || imageError) {
-    return null;
-  }
-
   return (
     <div className="bg-[var(--bg-secondary)] rounded-xl overflow-hidden shadow-lg hover:-translate-y-1 transition-transform duration-200">
       {/* Image */}
-      <img
-        src={imageSrc}
-        alt={photo.image_path}
-        onClick={() => onImageClick(imageSrc)}
-        onError={() => setImageError(true)}
-        loading="lazy"
-        className="w-full h-[300px] object-cover cursor-pointer bg-[var(--bg-tertiary)]"
-      />
+      {imageSrc && !imageError ? (
+        <img
+          src={imageSrc}
+          alt={photo.image_path}
+          onClick={() => onImageClick(imageSrc)}
+          onError={() => setImageError(true)}
+          loading="lazy"
+          className="w-full h-[300px] object-cover cursor-pointer bg-[var(--bg-tertiary)]"
+        />
+      ) : (
+        <div className="w-full h-[300px] bg-[var(--bg-tertiary)] flex items-center justify-center">
+          <div className="text-center text-[var(--text-muted)]">
+            <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-sm">Image unavailable</span>
+          </div>
+        </div>
+      )}
 
       <div className="p-4">
         {/* Filename */}
