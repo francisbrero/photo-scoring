@@ -1,12 +1,15 @@
 """Photos router for fetching and serving scored photos."""
 
+import random
+import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from ..dependencies import CurrentUser, SupabaseClient
+from ..services.credits import CreditService, InsufficientCreditsError
 
 router = APIRouter()
 
@@ -249,6 +252,176 @@ async def get_photo_image(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Storage error: {str(e)}",
         ) from e
+
+
+class UploadResponse(BaseModel):
+    """Response after uploading a photo."""
+
+    id: str
+    storage_path: str
+    message: str
+
+
+class ScoreResponse(BaseModel):
+    """Response after scoring a photo."""
+
+    id: str
+    final_score: float | None
+    aesthetic_score: float | None
+    technical_score: float | None
+    description: str | None
+    credits_remaining: int
+
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_photo(
+    user: CurrentUser,
+    supabase: SupabaseClient,
+    file: UploadFile = File(...),
+):
+    """Upload a photo for scoring.
+
+    The photo is stored in Supabase Storage and a record is created
+    in the scored_photos table. Scoring is done separately via the
+    /photos/{id}/score endpoint.
+    """
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type not supported. Use: {', '.join(allowed_types)}",
+        )
+
+    # Generate unique filename
+    file_ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    unique_id = str(uuid.uuid4())
+    storage_path = f"{user.id}/{unique_id}.{file_ext}"
+
+    # Read file content
+    content = await file.read()
+
+    # Check file size (50MB limit)
+    max_size = 50 * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size exceeds 50MB limit",
+        )
+
+    # Upload to Supabase Storage
+    try:
+        supabase.storage.from_("photos").upload(
+            storage_path,
+            content,
+            {"content-type": file.content_type},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}",
+        ) from e
+
+    # Create database record
+    photo_id = unique_id
+    try:
+        supabase.table("scored_photos").insert(
+            {
+                "id": photo_id,
+                "user_id": user.id,
+                "storage_path": storage_path,
+                "original_filename": file.filename,
+            }
+        ).execute()
+    except Exception as e:
+        # Clean up storage on failure
+        try:
+            supabase.storage.from_("photos").remove([storage_path])
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create photo record: {str(e)}",
+        ) from e
+
+    return UploadResponse(
+        id=photo_id,
+        storage_path=storage_path,
+        message="Photo uploaded successfully. Use /photos/{id}/score to score it.",
+    )
+
+
+@router.post("/{photo_id}/score", response_model=ScoreResponse)
+async def score_photo(
+    photo_id: str,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Score a previously uploaded photo.
+
+    This endpoint deducts 1 credit from the user's balance and
+    triggers the scoring pipeline. For now, it generates placeholder
+    scores until the inference proxy is implemented.
+    """
+    # Verify photo exists and belongs to user
+    result = (
+        supabase.table("scored_photos")
+        .select("*")
+        .eq("id", photo_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found",
+        )
+
+    photo = result.data[0]
+
+    # Check if already scored
+    if photo.get("final_score") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Photo has already been scored",
+        )
+
+    # Deduct credit
+    credit_service = CreditService(supabase)
+    try:
+        new_balance = await credit_service.deduct_credit(user.id, 1)
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=str(e),
+        ) from e
+
+    # TODO: Integrate with actual scoring pipeline (Issue #34)
+    # For now, generate placeholder scores
+    aesthetic_score = round(random.uniform(5.0, 9.0), 1)
+    technical_score = round(random.uniform(5.0, 9.0), 1)
+    final_score = round((aesthetic_score + technical_score) / 2, 1)
+
+    # Update photo with scores
+    supabase.table("scored_photos").update(
+        {
+            "final_score": final_score,
+            "aesthetic_score": aesthetic_score,
+            "technical_score": technical_score,
+            "description": "Photo analysis pending full scoring pipeline integration.",
+            "scored_at": "now()",
+        }
+    ).eq("id", photo_id).execute()
+
+    return ScoreResponse(
+        id=photo_id,
+        final_score=final_score,
+        aesthetic_score=aesthetic_score,
+        technical_score=technical_score,
+        description="Photo scored successfully.",
+        credits_remaining=new_balance,
+    )
 
 
 @router.get("/serve/{path:path}")

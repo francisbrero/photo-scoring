@@ -130,6 +130,40 @@ class CreditService:
 
         return new_balance
 
+    async def grant_trial_credits(self, user_id: str, amount: int = 5) -> int:
+        """Grant trial credits to a new user.
+
+        Only grants credits if user has never received trial credits before.
+
+        Args:
+            user_id: The user's ID
+            amount: Number of trial credits to grant (default 5)
+
+        Returns:
+            New balance (which equals amount for new users)
+            Returns current balance if trial already claimed
+        """
+        # Check if user already has a credits record (meaning they've used the system)
+        result = self.supabase.table("credits").select("balance").eq("user_id", user_id).execute()
+
+        if result.data:
+            # User already has credits record, return current balance
+            return result.data[0].get("balance", 0)
+
+        # Create new credits record with trial amount
+        self.supabase.table("credits").insert({"user_id": user_id, "balance": amount}).execute()
+
+        # Log trial credit transaction
+        self.supabase.table("transactions").insert(
+            {
+                "user_id": user_id,
+                "amount": amount,
+                "type": "trial",
+            }
+        ).execute()
+
+        return amount
+
     async def get_transactions(self, user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
         """Get user's transaction history.
 
