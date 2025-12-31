@@ -2,9 +2,9 @@ name: Tests
 
 on:
   pull_request:
-    branches: [master, main]
+    branches: [master, main, develop]
   push:
-    branches: [master, main]
+    branches: [master, main, develop]
 
 jobs:
   test:
@@ -24,7 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv venv
+          uv pip install -e ".[dev]"
 
       - name: Run tests
         run: |
@@ -55,7 +56,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv venv
+          uv pip install -e ".[dev]"
 
       - name: Check formatting with ruff
         run: |
