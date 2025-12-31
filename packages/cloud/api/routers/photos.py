@@ -400,6 +400,25 @@ async def score_photo(
             image_data = download_result.read()
         else:
             image_data = bytes(download_result)
+
+        # Debug: Log image data info
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"Downloaded image: {len(image_data)} bytes")
+        logger.info(f"First 50 bytes: {image_data[:50]}")
+        logger.info(f"Image data type: {type(image_data)}")
+
+        # Check for common image signatures
+        if image_data[:2] == b"\xff\xd8":
+            logger.info("Detected JPEG signature")
+        elif image_data[:8] == b"\x89PNG\r\n\x1a\n":
+            logger.info("Detected PNG signature")
+        elif image_data[:4] == b"RIFF" and image_data[8:12] == b"WEBP":
+            logger.info("Detected WebP signature")
+        else:
+            logger.warning(f"Unknown image format, first bytes: {image_data[:20].hex()}")
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
