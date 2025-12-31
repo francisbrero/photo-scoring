@@ -57,7 +57,7 @@ export function PhotoCard({
   onImageClick,
   onCorrectionUpdate,
 }: PhotoCardProps) {
-  const score = photo.final_score;
+  const score = photo.final_score ?? 0;
   const scoreLevel = getScoreLevel(score);
 
   const features = useMemo<PhotoFeatures>(() => {
