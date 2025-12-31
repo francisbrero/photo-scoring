@@ -13,49 +13,11 @@ from .conftest import FAKE_SERVICE_JWT
 TEST_PHOTOS_DIR = Path(__file__).parent.parent.parent.parent / "test_photos"
 
 
-def get_test_images():
-    """Get list of test images if directory exists."""
-    if not TEST_PHOTOS_DIR.exists():
-        return []
-    return list(TEST_PHOTOS_DIR.glob("*"))
-
-
 class TestRealImages:
     """Tests for loading real images from test_photos folder."""
 
-    @pytest.mark.parametrize("image_path", get_test_images(), ids=lambda p: p.name)
-    def test_load_real_image(self, monkeypatch, image_path):
-        """Test loading real images from test_photos folder."""
-        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
-        monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
-        monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-
-        from api.services.openrouter import OpenRouterService
-
-        service = OpenRouterService()
-
-        # Read the image file
-        image_data = image_path.read_bytes()
-        print(f"\nTesting: {image_path.name}")
-        print(f"  File size: {len(image_data)} bytes")
-        print(f"  First 20 bytes: {image_data[:20].hex()}")
-
-        # Try to load and encode
-        b64_data, media_type = service._load_and_encode_image(image_data)
-
-        assert media_type == "image/jpeg"
-        assert len(b64_data) > 0
-
-        # Verify we can decode it back
-        decoded = base64.b64decode(b64_data)
-        img = Image.open(BytesIO(decoded))
-        assert img.format == "JPEG"
-        print(f"  Output size: {img.size}")
-        print(f"  Output mode: {img.mode}")
-
     def test_jpeg_image(self, monkeypatch):
-        """Test loading a specific JPEG image."""
+        """Test loading a real JPEG image."""
         monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
         monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
         monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
@@ -70,18 +32,21 @@ class TestRealImages:
         service = OpenRouterService()
         image_data = jpeg_path.read_bytes()
 
-        print(f"\nJPEG test: {jpeg_path.name}")
-        print(f"  File size: {len(image_data)} bytes")
-        print(f"  First 20 bytes hex: {image_data[:20].hex()}")
-
         # Check JPEG signature
         assert image_data[:2] == b"\xff\xd8", "Not a valid JPEG file"
 
+        # Load and encode
         b64_data, media_type = service._load_and_encode_image(image_data)
         assert media_type == "image/jpeg"
+        assert len(b64_data) > 0
+
+        # Verify we can decode it back
+        decoded = base64.b64decode(b64_data)
+        img = Image.open(BytesIO(decoded))
+        assert img.format == "JPEG"
 
     def test_heic_image(self, monkeypatch):
-        """Test loading a specific HEIC image."""
+        """Test loading a real HEIC image (converted to JPEG)."""
         monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
         monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
         monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
@@ -96,9 +61,12 @@ class TestRealImages:
         service = OpenRouterService()
         image_data = heic_path.read_bytes()
 
-        print(f"\nHEIC test: {heic_path.name}")
-        print(f"  File size: {len(image_data)} bytes")
-        print(f"  First 20 bytes hex: {image_data[:20].hex()}")
-
+        # Load and encode (should convert HEIC to JPEG)
         b64_data, media_type = service._load_and_encode_image(image_data)
-        assert media_type == "image/jpeg"  # Should convert to JPEG
+        assert media_type == "image/jpeg"
+        assert len(b64_data) > 0
+
+        # Verify we can decode it back
+        decoded = base64.b64decode(b64_data)
+        img = Image.open(BytesIO(decoded))
+        assert img.format == "JPEG"
