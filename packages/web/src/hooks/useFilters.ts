@@ -17,6 +17,9 @@ export function useFilters(photos: Photo[]): UseFiltersResult {
   const [sortBy, setSortBy] = useState<SortOption>('score_desc');
 
   const sortedPhotos = useMemo(() => {
+    if (!photos || !Array.isArray(photos)) {
+      return [];
+    }
     const sorted = [...photos];
 
     switch (sortBy) {
@@ -41,7 +44,7 @@ export function useFilters(photos: Photo[]): UseFiltersResult {
   }, [photos, sortBy]);
 
   const stats = useMemo(() => {
-    if (photos.length === 0) {
+    if (!photos || !Array.isArray(photos) || photos.length === 0) {
       return { count: 0, avg: 0, min: 0, max: 0 };
     }
 
