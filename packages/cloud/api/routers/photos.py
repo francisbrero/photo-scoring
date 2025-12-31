@@ -1,6 +1,6 @@
 """Photos router for fetching and serving scored photos."""
 
-import random
+import hashlib
 import uuid
 from datetime import datetime
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..dependencies import CurrentUser, SupabaseClient
 from ..services.credits import CreditService, InsufficientCreditsError
+from ..services.openrouter import InferenceError, OpenRouterService
 
 router = APIRouter()
 
@@ -387,39 +388,143 @@ async def score_photo(
             detail="Photo has already been scored",
         )
 
-    # Deduct credit
-    credit_service = CreditService(supabase)
+    storage_path = photo["storage_path"]
+
+    # Download image from Supabase Storage
     try:
-        new_balance = await credit_service.deduct_credit(user.id, 1)
-    except InsufficientCreditsError as e:
+        image_data = supabase.storage.from_("photos").download(storage_path)
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download image: {str(e)}",
         ) from e
 
-    # TODO: Integrate with actual scoring pipeline (Issue #34)
-    # For now, generate placeholder scores
-    aesthetic_score = round(random.uniform(5.0, 9.0), 1)
-    technical_score = round(random.uniform(5.0, 9.0), 1)
-    final_score = round((aesthetic_score + technical_score) / 2, 1)
+    # Compute image hash for caching
+    image_hash = hashlib.sha256(image_data).hexdigest()
 
-    # Update photo with scores
+    # Check if we have cached inference results
+    cache_result = (
+        supabase.table("inference_cache")
+        .select("attributes")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    credit_service = CreditService(supabase)
+    inference_service = OpenRouterService()
+    cached = bool(cache_result.data)
+
+    if cached:
+        # Use cached attributes (free)
+        attributes = cache_result.data[0]["attributes"]
+        new_balance = await credit_service.get_balance(user.id)
+    else:
+        # Deduct credit for new inference
+        try:
+            new_balance = await credit_service.deduct_credit(user.id, 1)
+        except InsufficientCreditsError as e:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=str(e),
+            ) from e
+
+        # Run AI inference
+        try:
+            attributes = await inference_service.analyze_image(image_data, image_hash)
+        except InferenceError as e:
+            # Refund on failure
+            await credit_service.refund_credit(user.id, 1)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+                if e.retryable
+                else status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=e.message,
+            ) from e
+
+        # Cache the inference result
+        try:
+            supabase.table("inference_cache").insert(
+                {
+                    "user_id": user.id,
+                    "image_hash": image_hash,
+                    "attributes": attributes,
+                }
+            ).execute()
+        except Exception:
+            pass  # Don't fail if caching fails
+
+    # Compute scores from attributes
+    scores = inference_service.compute_scores(attributes)
+
+    # Get metadata (description, location) - try cache first
+    metadata_cache = (
+        supabase.table("metadata_cache")
+        .select("metadata")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    description = None
+    location_name = None
+    location_country = None
+
+    if metadata_cache.data:
+        meta = metadata_cache.data[0]["metadata"]
+        description = meta.get("description")
+        location_name = meta.get("location_name")
+        location_country = meta.get("location_country")
+    else:
+        # Run metadata inference (uses cheaper model, shares credit with main inference)
+        try:
+            metadata = await inference_service.analyze_image_metadata(image_data, image_hash)
+            description = metadata.get("description")
+            location_name = metadata.get("location_name")
+            location_country = metadata.get("location_country")
+
+            # Cache metadata
+            try:
+                supabase.table("metadata_cache").insert(
+                    {
+                        "user_id": user.id,
+                        "image_hash": image_hash,
+                        "metadata": metadata,
+                    }
+                ).execute()
+            except Exception:
+                pass
+        except InferenceError:
+            # Metadata extraction is optional, don't fail the whole request
+            pass
+
+    # Update photo with scores and metadata
     supabase.table("scored_photos").update(
         {
-            "final_score": final_score,
-            "aesthetic_score": aesthetic_score,
-            "technical_score": technical_score,
-            "description": "Photo analysis pending full scoring pipeline integration.",
+            "final_score": scores["final_score"],
+            "aesthetic_score": scores["aesthetic_score"],
+            "technical_score": scores["technical_score"],
+            "description": description,
+            "location_name": location_name,
+            "location_country": location_country,
+            "model_scores": {
+                "composition": attributes.get("composition"),
+                "subject_strength": attributes.get("subject_strength"),
+                "visual_appeal": attributes.get("visual_appeal"),
+                "sharpness": attributes.get("sharpness"),
+                "exposure_balance": attributes.get("exposure_balance"),
+                "noise_level": attributes.get("noise_level"),
+            },
             "scored_at": "now()",
         }
     ).eq("id", photo_id).execute()
 
     return ScoreResponse(
         id=photo_id,
-        final_score=final_score,
-        aesthetic_score=aesthetic_score,
-        technical_score=technical_score,
-        description="Photo scored successfully.",
+        final_score=scores["final_score"],
+        aesthetic_score=scores["aesthetic_score"],
+        technical_score=scores["technical_score"],
+        description=description or "Photo analyzed successfully.",
         credits_remaining=new_balance,
     )
 
