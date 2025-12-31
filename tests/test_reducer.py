@@ -54,9 +54,7 @@ class TestScoringReducer:
         self, reducer: ScoringReducer, perfect_attributes: NormalizedAttributes
     ):
         """Perfect attributes should yield score of 100."""
-        result = reducer.compute_scores(
-            "test123", "test/image.jpg", perfect_attributes
-        )
+        result = reducer.compute_scores("test123", "test/image.jpg", perfect_attributes)
         assert result.final_score == 100.0
         assert result.technical_score == 1.0
         assert result.aesthetic_score == 1.0
@@ -65,9 +63,7 @@ class TestScoringReducer:
         self, reducer: ScoringReducer, poor_attributes: NormalizedAttributes
     ):
         """Zero attributes should yield low score with threshold penalties."""
-        result = reducer.compute_scores(
-            "test456", "test/image.jpg", poor_attributes
-        )
+        result = reducer.compute_scores("test456", "test/image.jpg", poor_attributes)
         # Score should be very low due to threshold penalties
         assert result.final_score < 50.0
         assert result.technical_score == 0.0
@@ -107,9 +103,7 @@ class TestScoringReducer:
         self, reducer: ScoringReducer, perfect_attributes: NormalizedAttributes
     ):
         """Contributions should sum to approximately 1.0 for perfect attributes."""
-        result = reducer.compute_scores(
-            "test123", "test/image.jpg", perfect_attributes
-        )
+        result = reducer.compute_scores("test123", "test/image.jpg", perfect_attributes)
         total = sum(result.contributions.values())
         assert 0.99 <= total <= 1.01
 
@@ -117,9 +111,7 @@ class TestScoringReducer:
         self, reducer: ScoringReducer, perfect_attributes: NormalizedAttributes
     ):
         """All attribute keys should be present in contributions."""
-        result = reducer.compute_scores(
-            "test123", "test/image.jpg", perfect_attributes
-        )
+        result = reducer.compute_scores("test123", "test/image.jpg", perfect_attributes)
         expected_keys = {
             "composition",
             "subject_strength",

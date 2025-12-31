@@ -84,9 +84,9 @@ VISION_MODELS = {
 
 # Default models to benchmark (balanced cost/quality)
 DEFAULT_BENCHMARK_MODELS = [
-    "qwen2.5-vl-72b",      # Cheapest
-    "pixtral-12b",          # Very cheap, Mistral
-    "gpt-4o-mini",          # OpenAI baseline
-    "gemini-2.5-flash",     # Google
-    "claude-3.5-sonnet",    # Current baseline (expensive)
+    "qwen2.5-vl-72b",  # Cheapest
+    "pixtral-12b",  # Very cheap, Mistral
+    "gpt-4o-mini",  # OpenAI baseline
+    "gemini-2.5-flash",  # Google
+    "claude-3.5-sonnet",  # Current baseline (expensive)
 ]

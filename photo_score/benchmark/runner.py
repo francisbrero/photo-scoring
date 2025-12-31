@@ -11,7 +11,11 @@ from typing import Any
 
 from photo_score.benchmark.models import VISION_MODELS, ModelConfig
 from photo_score.inference.client import OpenRouterClient, OpenRouterError
-from photo_score.inference.prompts import AESTHETIC_PROMPT, TECHNICAL_PROMPT, METADATA_PROMPT
+from photo_score.inference.prompts import (
+    AESTHETIC_PROMPT,
+    TECHNICAL_PROMPT,
+    METADATA_PROMPT,
+)
 from photo_score.ingestion.discover import discover_images
 
 logger = logging.getLogger(__name__)
@@ -69,7 +73,7 @@ class BenchmarkRunner:
 
         start_time = time.time()
         try:
-            response = self.client._call_api(image_path, prompt, model=model_config.id)
+            response = self.client.call_api(image_path, prompt, model=model_config.id)
             result.success = True
             result.response = response
         except OpenRouterError as e:
@@ -130,13 +134,17 @@ class BenchmarkRunner:
         total_tasks = len(images) * len(models) * len(tasks)
         completed = 0
 
-        logger.info(f"Starting benchmark: {len(images)} images x {len(models)} models x {len(tasks)} tasks = {total_tasks} API calls")
+        logger.info(
+            f"Starting benchmark: {len(images)} images x {len(models)} models x {len(tasks)} tasks = {total_tasks} API calls"
+        )
 
         for image in images:
             for model in models:
                 for task in tasks:
                     completed += 1
-                    logger.info(f"[{completed}/{total_tasks}] {model.name} - {image.filename} - {task}")
+                    logger.info(
+                        f"[{completed}/{total_tasks}] {model.name} - {image.filename} - {task}"
+                    )
 
                     result = self.run_single_task(
                         image.file_path,
@@ -170,16 +178,20 @@ class BenchmarkRunner:
             )
             writer.writeheader()
             for result in benchmark.results:
-                writer.writerow({
-                    "model_id": result.model_id,
-                    "model_name": result.model_name,
-                    "image_path": result.image_path,
-                    "task": result.task,
-                    "success": result.success,
-                    "latency_ms": round(result.latency_ms, 2),
-                    "response": json.dumps(result.response) if result.response else "",
-                    "error": result.error,
-                })
+                writer.writerow(
+                    {
+                        "model_id": result.model_id,
+                        "model_name": result.model_name,
+                        "image_path": result.image_path,
+                        "task": result.task,
+                        "success": result.success,
+                        "latency_ms": round(result.latency_ms, 2),
+                        "response": json.dumps(result.response)
+                        if result.response
+                        else "",
+                        "error": result.error,
+                    }
+                )
 
         logger.info(f"Results saved to {output_path}")
 
@@ -233,12 +245,23 @@ class BenchmarkRunner:
             print(f"  Avg latency: {avg_latency:.0f}ms")
 
             # Show sample scores for aesthetic task
-            if "aesthetic" in stats["tasks"] and stats["tasks"]["aesthetic"]["responses"]:
+            if (
+                "aesthetic" in stats["tasks"]
+                and stats["tasks"]["aesthetic"]["responses"]
+            ):
                 responses = stats["tasks"]["aesthetic"]["responses"]
                 if responses:
-                    avg_composition = sum(r.get("composition", 0) for r in responses) / len(responses)
-                    avg_subject = sum(r.get("subject_strength", 0) for r in responses) / len(responses)
-                    avg_appeal = sum(r.get("visual_appeal", 0) for r in responses) / len(responses)
-                    print(f"  Avg aesthetic scores: composition={avg_composition:.2f}, subject={avg_subject:.2f}, appeal={avg_appeal:.2f}")
+                    avg_composition = sum(
+                        r.get("composition", 0) for r in responses
+                    ) / len(responses)
+                    avg_subject = sum(
+                        r.get("subject_strength", 0) for r in responses
+                    ) / len(responses)
+                    avg_appeal = sum(
+                        r.get("visual_appeal", 0) for r in responses
+                    ) / len(responses)
+                    print(
+                        f"  Avg aesthetic scores: composition={avg_composition:.2f}, subject={avg_subject:.2f}, appeal={avg_appeal:.2f}"
+                    )
 
         print("\n" + "=" * 60)

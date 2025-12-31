@@ -29,7 +29,10 @@ class TestConfigSchema:
         """Invalid category weights should raise error."""
         with pytest.raises(ValueError):
             ScoringConfig(
-                category_weights={"aesthetic": 0.5, "technical": 0.3}  # Doesn't sum to 1
+                category_weights={
+                    "aesthetic": 0.5,
+                    "technical": 0.3,
+                }  # Doesn't sum to 1
             )
 
     def test_weight_bounds(self):
@@ -80,9 +83,7 @@ class TestConfigLoader:
             },
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(config_data, f)
             f.flush()
 
@@ -98,9 +99,7 @@ class TestConfigLoader:
             "version": "1.5",
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(config_data, f)
             f.flush()
 
@@ -111,9 +110,7 @@ class TestConfigLoader:
 
     def test_load_empty_config(self):
         """Empty config should use all defaults."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("{}")
             f.flush()
 

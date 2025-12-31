@@ -1,4 +1,10 @@
-"""Vision model prompts for image analysis."""
+"""Vision model prompts for single-model image analysis.
+
+These prompts are used by the basic OpenRouterClient for single-model scoring,
+and by the benchmark runner for comparing model behavior.
+
+For multi-model composite scoring prompts, see prompts_v2.py.
+"""
 
 AESTHETIC_PROMPT = """You are a harsh photography critic evaluating images for a curated portfolio. Most travel and casual photos score between 0.3 and 0.6. Scores above 0.7 are rare and require exceptional qualities.
 

@@ -54,7 +54,9 @@ class ScoringReducer:
     def _compute_aesthetic_score(self, attrs: NormalizedAttributes) -> float:
         """Compute weighted aesthetic score (0-1)."""
         weights = self.config.weights.aesthetic
-        total_weight = weights.composition + weights.subject_strength + weights.visual_appeal
+        total_weight = (
+            weights.composition + weights.subject_strength + weights.visual_appeal
+        )
 
         score = (
             attrs.composition * weights.composition
@@ -67,7 +69,9 @@ class ScoringReducer:
     def _compute_technical_score(self, attrs: NormalizedAttributes) -> float:
         """Compute weighted technical score (0-1)."""
         weights = self.config.weights.technical
-        total_weight = weights.sharpness + weights.exposure_balance + weights.noise_level
+        total_weight = (
+            weights.sharpness + weights.exposure_balance + weights.noise_level
+        )
 
         score = (
             attrs.sharpness * weights.sharpness
@@ -77,27 +81,27 @@ class ScoringReducer:
 
         return score
 
-    def _apply_thresholds(
-        self, score: float, attrs: NormalizedAttributes
-    ) -> float:
+    def _apply_thresholds(self, score: float, attrs: NormalizedAttributes) -> float:
         """Apply hard threshold penalties."""
         thresholds = self.config.thresholds
 
         # Cap score if below sharpness threshold
         if attrs.sharpness < thresholds.sharpness_min:
-            penalty = (thresholds.sharpness_min - attrs.sharpness) / thresholds.sharpness_min
+            penalty = (
+                thresholds.sharpness_min - attrs.sharpness
+            ) / thresholds.sharpness_min
             score = score * (1 - penalty * 0.5)  # Up to 50% penalty
 
         # Cap score if below exposure threshold
         if attrs.exposure_balance < thresholds.exposure_min:
-            penalty = (thresholds.exposure_min - attrs.exposure_balance) / thresholds.exposure_min
+            penalty = (
+                thresholds.exposure_min - attrs.exposure_balance
+            ) / thresholds.exposure_min
             score = score * (1 - penalty * 0.3)  # Up to 30% penalty
 
         return max(0.0, min(1.0, score))
 
-    def _compute_contributions(
-        self, attrs: NormalizedAttributes
-    ) -> dict[str, float]:
+    def _compute_contributions(self, attrs: NormalizedAttributes) -> dict[str, float]:
         """Compute per-attribute contribution to final score.
 
         Returns:
@@ -109,8 +113,16 @@ class ScoringReducer:
         cat_weights = self.config.category_weights
 
         # Normalize within categories
-        aes_total = aes_weights.composition + aes_weights.subject_strength + aes_weights.visual_appeal
-        tech_total = tech_weights.sharpness + tech_weights.exposure_balance + tech_weights.noise_level
+        aes_total = (
+            aes_weights.composition
+            + aes_weights.subject_strength
+            + aes_weights.visual_appeal
+        )
+        tech_total = (
+            tech_weights.sharpness
+            + tech_weights.exposure_balance
+            + tech_weights.noise_level
+        )
 
         contributions = {}
 

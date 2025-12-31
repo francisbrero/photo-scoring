@@ -1,10 +1,8 @@
 """Composite scoring system using multiple vision models."""
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from photo_score.inference.client import OpenRouterClient, OpenRouterError
 from photo_score.inference.prompts_v2 import (
@@ -21,17 +19,17 @@ logger = logging.getLogger(__name__)
 # Using Qwen + Gemini (no GPT-4o-mini) for 73% cost reduction
 # GPT-4o-mini encodes images as ~37K tokens vs ~3K for others
 MODELS = {
-    "feature_extraction": "mistralai/pixtral-12b",      # ~$0.0003/call
+    "feature_extraction": "mistralai/pixtral-12b",  # ~$0.0003/call
     "aesthetic_scorers": [
-        ("qwen/qwen2.5-vl-72b-instruct", 0.50),         # ~$0.0002/call
-        ("google/gemini-2.5-flash", 0.50),              # ~$0.0008/call
+        ("qwen/qwen2.5-vl-72b-instruct", 0.50),  # ~$0.0002/call
+        ("google/gemini-2.5-flash", 0.50),  # ~$0.0008/call
     ],
     "technical_scorers": [
         ("qwen/qwen2.5-vl-72b-instruct", 0.50),
         ("google/gemini-2.5-flash", 0.50),
     ],
-    "metadata": "mistralai/pixtral-12b",                # ~$0.0003/call
-    "critique": "google/gemini-3-flash-preview",        # ~$0.002/call - SOTA for reasoning
+    "metadata": "mistralai/pixtral-12b",  # ~$0.0003/call
+    "critique": "google/gemini-3-flash-preview",  # ~$0.002/call - SOTA for reasoning
 }
 # Total: 7 API calls, ~$0.005/image
 
@@ -39,6 +37,7 @@ MODELS = {
 @dataclass
 class FeatureExtraction:
     """Extracted features from an image."""
+
     scene_type: str = ""
     main_subject: str = ""
     subject_position: str = ""
@@ -60,6 +59,7 @@ class FeatureExtraction:
 @dataclass
 class ModelScore:
     """Score from a single model."""
+
     model_id: str
     composition: float = 0.0
     subject_strength: float = 0.0
@@ -75,6 +75,7 @@ class ModelScore:
 @dataclass
 class CompositeResult:
     """Complete composite scoring result."""
+
     image_path: str
 
     # Feature extraction
@@ -116,10 +117,10 @@ class CompositeScorer:
     def extract_features(self, image_path: Path) -> FeatureExtraction:
         """Extract detailed features using Pixtral."""
         try:
-            result = self.client._call_api(
+            result = self.client.call_api(
                 image_path,
                 FEATURE_EXTRACTION_PROMPT,
-                model=MODELS["feature_extraction"]
+                model=MODELS["feature_extraction"],
             )
             return FeatureExtraction(
                 scene_type=result.get("scene_type", ""),
@@ -147,10 +148,8 @@ class CompositeScorer:
         """Get aesthetic score from a single model."""
         score = ModelScore(model_id=model_id)
         try:
-            result = self.client._call_api(
-                image_path,
-                AESTHETIC_SCORING_PROMPT,
-                model=model_id
+            result = self.client.call_api(
+                image_path, AESTHETIC_SCORING_PROMPT, model=model_id
             )
             score.composition = float(result.get("composition", 0))
             score.subject_strength = float(result.get("subject_strength", 0))
@@ -166,10 +165,8 @@ class CompositeScorer:
         """Get technical score from a single model."""
         score = ModelScore(model_id=model_id)
         try:
-            result = self.client._call_api(
-                image_path,
-                TECHNICAL_SCORING_PROMPT,
-                model=model_id
+            result = self.client.call_api(
+                image_path, TECHNICAL_SCORING_PROMPT, model=model_id
             )
             score.sharpness = float(result.get("sharpness", 0))
             score.exposure = float(result.get("exposure", 0))
@@ -184,10 +181,8 @@ class CompositeScorer:
     def get_metadata(self, image_path: Path) -> tuple[str, str, str]:
         """Get description and location using Pixtral."""
         try:
-            result = self.client._call_api(
-                image_path,
-                METADATA_PROMPT,
-                model=MODELS["metadata"]
+            result = self.client.call_api(
+                image_path, METADATA_PROMPT, model=MODELS["metadata"]
             )
             return (
                 result.get("description", ""),
@@ -225,8 +220,8 @@ class CompositeScorer:
         )
 
         try:
-            logger.info(f"Generating critique: {image_path.name}")
-            response = self.client._call_api(
+            logger.debug(f"Generating critique: {image_path.name}")
+            response = self.client.call_api(
                 image_path, prompt, model=MODELS["critique"], max_tokens=1024
             )
 
@@ -275,9 +270,13 @@ class CompositeScorer:
 
         # Add key recommendation
         if critique.get("key_recommendation"):
-            improvements.append(f"**Key recommendation:** {critique['key_recommendation']}")
+            improvements.append(
+                f"**Key recommendation:** {critique['key_recommendation']}"
+            )
 
-        return improvements if improvements else ["No specific improvements identified."]
+        return (
+            improvements if improvements else ["No specific improvements identified."]
+        )
 
     def compute_weighted_scores(self, result: CompositeResult) -> None:
         """Compute weighted composite scores from individual model scores."""
@@ -291,7 +290,7 @@ class CompositeScorer:
             # Find weight for this model
             weight = next(
                 (w for model_id, w in aesthetic_scorers if model_id == score.model_id),
-                0.0
+                0.0,
             )
             result.composition += score.composition * weight
             result.subject_strength += score.subject_strength * weight
@@ -312,7 +311,7 @@ class CompositeScorer:
                 continue
             weight = next(
                 (w for model_id, w in technical_scorers if model_id == score.model_id),
-                0.0
+                0.0,
             )
             result.sharpness += score.sharpness * weight
             result.exposure += score.exposure * weight
@@ -326,21 +325,20 @@ class CompositeScorer:
 
         # Compute final scores
         result.aesthetic_score = (
-            result.composition * 0.4 +
-            result.subject_strength * 0.35 +
-            result.visual_appeal * 0.25
+            result.composition * 0.4
+            + result.subject_strength * 0.35
+            + result.visual_appeal * 0.25
         )
         result.technical_score = (
-            result.sharpness * 0.4 +
-            result.exposure * 0.35 +
-            result.noise_level * 0.25
+            result.sharpness * 0.4 + result.exposure * 0.35 + result.noise_level * 0.25
         )
         result.final_score = (
-            result.aesthetic_score * 0.6 +
-            result.technical_score * 0.4
+            result.aesthetic_score * 0.6 + result.technical_score * 0.4
         ) * 100
 
-    def score_image(self, image_path: Path, include_features: bool = True) -> CompositeResult:
+    def score_image(
+        self, image_path: Path, include_features: bool = True
+    ) -> CompositeResult:
         """Score a single image using the composite system.
 
         API calls made:

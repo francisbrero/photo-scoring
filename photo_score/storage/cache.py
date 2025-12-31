@@ -6,7 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from photo_score.storage.models import NormalizedAttributes, RawInferenceResult, ImageMetadata
+from photo_score.storage.models import (
+    NormalizedAttributes,
+    RawInferenceResult,
+    ImageMetadata,
+)
 
 DEFAULT_CACHE_DIR = Path.home() / ".photo_score"
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"

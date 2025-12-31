@@ -37,9 +37,9 @@ def run_calibration(image_dir: Path, output_path: Path, max_images: int = 10):
 
     try:
         for i, image in enumerate(images):
-            logger.info(f"\n{'='*60}")
-            logger.info(f"Processing [{i+1}/{len(images)}]: {image.filename}")
-            logger.info(f"{'='*60}")
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Processing [{i + 1}/{len(images)}]: {image.filename}")
+            logger.info(f"{'=' * 60}")
 
             result = scorer.score_image(image.file_path, include_features=True)
             results.append(result)
@@ -47,17 +47,27 @@ def run_calibration(image_dir: Path, output_path: Path, max_images: int = 10):
             # Print summary for this image
             print(f"\n{image.filename}:")
             print(f"  Final Score: {result.final_score:.1f}/100")
-            print(f"  Aesthetic: {result.aesthetic_score:.3f} (comp={result.composition:.2f}, subj={result.subject_strength:.2f}, appeal={result.visual_appeal:.2f})")
-            print(f"  Technical: {result.technical_score:.3f} (sharp={result.sharpness:.2f}, exp={result.exposure:.2f}, noise={result.noise_level:.2f})")
-            print(f"  Features: {result.features.scene_type}, {result.features.lighting}, {result.features.subject_position}")
-            print(f"  Location: {result.location_name or 'Unknown'}, {result.location_country or 'Unknown'}")
+            print(
+                f"  Aesthetic: {result.aesthetic_score:.3f} (comp={result.composition:.2f}, subj={result.subject_strength:.2f}, appeal={result.visual_appeal:.2f})"
+            )
+            print(
+                f"  Technical: {result.technical_score:.3f} (sharp={result.sharpness:.2f}, exp={result.exposure:.2f}, noise={result.noise_level:.2f})"
+            )
+            print(
+                f"  Features: {result.features.scene_type}, {result.features.lighting}, {result.features.subject_position}"
+            )
+            print(
+                f"  Location: {result.location_name or 'Unknown'}, {result.location_country or 'Unknown'}"
+            )
 
             # Show individual model scores
-            print(f"  Aesthetic scores by model:")
+            print("  Aesthetic scores by model:")
             for score in result.aesthetic_scores:
                 if score.success:
                     model_short = score.model_id.split("/")[-1][:15]
-                    print(f"    {model_short}: comp={score.composition:.2f}, subj={score.subject_strength:.2f}, appeal={score.visual_appeal:.2f}")
+                    print(
+                        f"    {model_short}: comp={score.composition:.2f}, subj={score.subject_strength:.2f}, appeal={score.visual_appeal:.2f}"
+                    )
 
     finally:
         scorer.close()
@@ -108,18 +118,25 @@ def save_calibration_results(results: list[CompositeResult], output_path: Path):
 
         for result in results:
             # Extract individual model scores
-            qwen_aes = next((s for s in result.aesthetic_scores if "qwen" in s.model_id), None)
-            gpt_aes = next((s for s in result.aesthetic_scores if "gpt" in s.model_id), None)
-            gem_aes = next((s for s in result.aesthetic_scores if "gemini" in s.model_id), None)
+            qwen_aes = next(
+                (s for s in result.aesthetic_scores if "qwen" in s.model_id), None
+            )
+            gpt_aes = next(
+                (s for s in result.aesthetic_scores if "gpt" in s.model_id), None
+            )
+            gem_aes = next(
+                (s for s in result.aesthetic_scores if "gemini" in s.model_id), None
+            )
 
-            qwen_tech = next((s for s in result.technical_scores if "qwen" in s.model_id), None)
-            gpt_tech = next((s for s in result.technical_scores if "gpt" in s.model_id), None)
-            gem_tech = next((s for s in result.technical_scores if "gemini" in s.model_id), None)
-
-            def avg_score(s):
-                if s and s.success:
-                    return (s.composition + s.subject_strength + s.visual_appeal) / 3 if hasattr(s, 'composition') and s.composition else (s.sharpness + s.exposure + s.noise_level) / 3
-                return None
+            qwen_tech = next(
+                (s for s in result.technical_scores if "qwen" in s.model_id), None
+            )
+            gpt_tech = next(
+                (s for s in result.technical_scores if "gpt" in s.model_id), None
+            )
+            gem_tech = next(
+                (s for s in result.technical_scores if "gemini" in s.model_id), None
+            )
 
             row = {
                 "image_path": result.image_path,
@@ -140,12 +157,24 @@ def save_calibration_results(results: list[CompositeResult], output_path: Path):
                 "location_country": result.location_country,
                 "explanation": result.explanation,
                 "improvements": " | ".join(result.improvements),
-                "qwen_aesthetic": f"{qwen_aes.composition:.2f}/{qwen_aes.subject_strength:.2f}/{qwen_aes.visual_appeal:.2f}" if qwen_aes and qwen_aes.success else "failed",
-                "gpt4o_aesthetic": f"{gpt_aes.composition:.2f}/{gpt_aes.subject_strength:.2f}/{gpt_aes.visual_appeal:.2f}" if gpt_aes and gpt_aes.success else "failed",
-                "gemini_aesthetic": f"{gem_aes.composition:.2f}/{gem_aes.subject_strength:.2f}/{gem_aes.visual_appeal:.2f}" if gem_aes and gem_aes.success else "failed",
-                "qwen_technical": f"{qwen_tech.sharpness:.2f}/{qwen_tech.exposure:.2f}/{qwen_tech.noise_level:.2f}" if qwen_tech and qwen_tech.success else "failed",
-                "gpt4o_technical": f"{gpt_tech.sharpness:.2f}/{gpt_tech.exposure:.2f}/{gpt_tech.noise_level:.2f}" if gpt_tech and gpt_tech.success else "failed",
-                "gemini_technical": f"{gem_tech.sharpness:.2f}/{gem_tech.exposure:.2f}/{gem_tech.noise_level:.2f}" if gem_tech and gem_tech.success else "failed",
+                "qwen_aesthetic": f"{qwen_aes.composition:.2f}/{qwen_aes.subject_strength:.2f}/{qwen_aes.visual_appeal:.2f}"
+                if qwen_aes and qwen_aes.success
+                else "failed",
+                "gpt4o_aesthetic": f"{gpt_aes.composition:.2f}/{gpt_aes.subject_strength:.2f}/{gpt_aes.visual_appeal:.2f}"
+                if gpt_aes and gpt_aes.success
+                else "failed",
+                "gemini_aesthetic": f"{gem_aes.composition:.2f}/{gem_aes.subject_strength:.2f}/{gem_aes.visual_appeal:.2f}"
+                if gem_aes and gem_aes.success
+                else "failed",
+                "qwen_technical": f"{qwen_tech.sharpness:.2f}/{qwen_tech.exposure:.2f}/{qwen_tech.noise_level:.2f}"
+                if qwen_tech and qwen_tech.success
+                else "failed",
+                "gpt4o_technical": f"{gpt_tech.sharpness:.2f}/{gpt_tech.exposure:.2f}/{gpt_tech.noise_level:.2f}"
+                if gpt_tech and gpt_tech.success
+                else "failed",
+                "gemini_technical": f"{gem_tech.sharpness:.2f}/{gem_tech.exposure:.2f}/{gem_tech.noise_level:.2f}"
+                if gem_tech and gem_tech.success
+                else "failed",
                 "features_json": json.dumps(result.features.raw),
             }
             writer.writerow(row)
@@ -161,22 +190,26 @@ def print_summary(results: list[CompositeResult]):
     print("=" * 60)
 
     scores = [r.final_score for r in results]
-    aesthetics = [r.aesthetic_score for r in results]
-    technicals = [r.technical_score for r in results]
 
-    print(f"\nFinal Scores:")
+    print("\nFinal Scores:")
     print(f"  Min: {min(scores):.1f}")
     print(f"  Max: {max(scores):.1f}")
-    print(f"  Avg: {sum(scores)/len(scores):.1f}")
+    print(f"  Avg: {sum(scores) / len(scores):.1f}")
 
-    print(f"\nScore Distribution:")
+    print("\nScore Distribution:")
     bins = [(0, 30), (30, 50), (50, 70), (70, 85), (85, 100)]
-    labels = ["Flawed (0-30)", "Tourist (30-50)", "Competent (50-70)", "Strong (70-85)", "Excellent (85-100)"]
+    labels = [
+        "Flawed (0-30)",
+        "Tourist (30-50)",
+        "Competent (50-70)",
+        "Strong (70-85)",
+        "Excellent (85-100)",
+    ]
     for (low, high), label in zip(bins, labels):
         count = sum(1 for s in scores if low <= s < high)
         print(f"  {label}: {count} images")
 
-    print(f"\nModel Agreement (aesthetic scores):")
+    print("\nModel Agreement (aesthetic scores):")
     for result in results[:3]:  # Show first 3
         scores_by_model = []
         for s in result.aesthetic_scores:
@@ -194,8 +227,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Calibrate composite scoring system")
     parser.add_argument("-i", "--input", required=True, help="Image directory")
-    parser.add_argument("-o", "--output", default="calibration_results.csv", help="Output CSV")
-    parser.add_argument("-n", "--max-images", type=int, default=10, help="Max images to process")
+    parser.add_argument(
+        "-o", "--output", default="calibration_results.csv", help="Output CSV"
+    )
+    parser.add_argument(
+        "-n", "--max-images", type=int, default=10, help="Max images to process"
+    )
 
     args = parser.parse_args()
 
