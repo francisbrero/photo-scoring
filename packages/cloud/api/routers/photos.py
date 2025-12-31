@@ -541,7 +541,7 @@ async def score_photo(
                 "exposure_balance": attributes.get("exposure_balance"),
                 "noise_level": attributes.get("noise_level"),
             },
-            "scored_at": "now()",
+            "updated_at": "now()",
         }
     ).eq("id", photo_id).execute()
 
