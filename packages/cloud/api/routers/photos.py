@@ -20,6 +20,7 @@ class PhotoResponse(BaseModel):
 
     id: str
     image_path: str  # Storage path relative to user folder
+    image_url: str | None  # Signed URL for displaying the image
     final_score: float | None
     aesthetic_score: float | None
     technical_score: float | None
@@ -86,10 +87,24 @@ async def list_photos(
         # Extract model scores from JSONB if present
         model_scores = row.get("model_scores") or {}
 
+        # Generate signed URL for the image (valid for 1 hour)
+        image_url = None
+        storage_path = row.get("storage_path")
+        if storage_path:
+            try:
+                signed_url_response = supabase.storage.from_("photos").create_signed_url(
+                    storage_path, expires_in=3600
+                )
+                if signed_url_response and "signedURL" in signed_url_response:
+                    image_url = signed_url_response["signedURL"]
+            except Exception:
+                pass  # Skip if signed URL generation fails
+
         photos.append(
             PhotoResponse(
                 id=row["id"],
                 image_path=row["storage_path"],
+                image_url=image_url,
                 final_score=row.get("final_score"),
                 aesthetic_score=row.get("aesthetic_score"),
                 technical_score=row.get("technical_score"),

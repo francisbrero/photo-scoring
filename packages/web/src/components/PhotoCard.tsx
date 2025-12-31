@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Photo, Correction, PhotoFeatures } from '../types/photo';
 import { getScoreLevel, getScoreLabel } from '../types/photo';
 import { ScoreBreakdown } from './ScoreBreakdown';
@@ -60,6 +60,8 @@ export function PhotoCard({
   const score = photo.final_score ?? 0;
   const scoreLevel = getScoreLevel(score);
 
+  const [imageError, setImageError] = useState(false);
+
   const features = useMemo<PhotoFeatures>(() => {
     if (!photo.features_json) return {};
     try {
@@ -69,7 +71,13 @@ export function PhotoCard({
     }
   }, [photo.features_json]);
 
-  const imageSrc = `/photos/${encodeURIComponent(photo.image_path)}`;
+  // Use the signed URL from the API response
+  const imageSrc = photo.image_url;
+
+  // Don't render if no image URL or image failed to load
+  if (!imageSrc || imageError) {
+    return null;
+  }
 
   return (
     <div className="bg-[var(--bg-secondary)] rounded-xl overflow-hidden shadow-lg hover:-translate-y-1 transition-transform duration-200">
@@ -78,6 +86,7 @@ export function PhotoCard({
         src={imageSrc}
         alt={photo.image_path}
         onClick={() => onImageClick(imageSrc)}
+        onError={() => setImageError(true)}
         loading="lazy"
         className="w-full h-[300px] object-cover cursor-pointer bg-[var(--bg-tertiary)]"
       />
