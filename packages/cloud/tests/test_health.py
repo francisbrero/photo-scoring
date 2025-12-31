@@ -11,6 +11,7 @@ def client(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "test-service-key")
     monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
     from api.main import create_app
 
