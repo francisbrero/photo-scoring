@@ -123,7 +123,19 @@ class OpenRouterService:
         Returns:
             Tuple of (base64_data, media_type)
         """
-        with Image.open(BytesIO(image_data)) as img:
+        if not image_data:
+            raise InferenceError("Empty image data")
+
+        logger.info(f"Loading image: {len(image_data)} bytes, first 20 bytes: {image_data[:20]}")
+
+        try:
+            img = Image.open(BytesIO(image_data))
+        except Exception as e:
+            raise InferenceError(
+                f"Cannot open image: {e}. Data length: {len(image_data)}, type: {type(image_data)}"
+            )
+
+        with img:
             # Apply EXIF orientation (fixes rotated images from phones)
             img = ImageOps.exif_transpose(img)
 

@@ -392,7 +392,14 @@ async def score_photo(
 
     # Download image from Supabase Storage
     try:
-        image_data = supabase.storage.from_("photos").download(storage_path)
+        download_result = supabase.storage.from_("photos").download(storage_path)
+        # Supabase returns bytes directly, but ensure we have bytes
+        if isinstance(download_result, bytes):
+            image_data = download_result
+        elif hasattr(download_result, "read"):
+            image_data = download_result.read()
+        else:
+            image_data = bytes(download_result)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
