@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import heic2any from 'heic2any';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../lib/api';
 
@@ -13,7 +14,37 @@ interface UploadFile {
 }
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'];
+const HEIC_TYPES = ['image/heic', 'image/heif'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+/**
+ * Check if a file is HEIC/HEIF format (by type or extension)
+ */
+function isHeicFile(file: File): boolean {
+  if (HEIC_TYPES.includes(file.type)) return true;
+  const ext = file.name.toLowerCase().split('.').pop();
+  return ext === 'heic' || ext === 'heif';
+}
+
+/**
+ * Convert HEIC file to JPEG blob for preview
+ */
+async function convertHeicToJpeg(file: File): Promise<string> {
+  try {
+    const blob = await heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: 0.8,
+    });
+    // heic2any can return an array of blobs for multi-image HEIC
+    const resultBlob = Array.isArray(blob) ? blob[0] : blob;
+    return URL.createObjectURL(resultBlob);
+  } catch (error) {
+    console.error('Failed to convert HEIC:', error);
+    // Return a placeholder or empty string on failure
+    return '';
+  }
+}
 
 export function Upload() {
   const [files, setFiles] = useState<UploadFile[]>([]);
@@ -32,18 +63,32 @@ export function Upload() {
     return null;
   };
 
-  const addFiles = useCallback((newFiles: FileList | File[]) => {
+  const addFiles = useCallback(async (newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
-    const uploadFiles: UploadFile[] = fileArray.map((file) => {
-      const error = validateFile(file);
-      return {
-        file,
-        preview: URL.createObjectURL(file),
-        status: error ? 'error' : 'pending',
-        progress: 0,
-        error: error || undefined,
-      };
-    });
+
+    // Process files and convert HEIC previews
+    const uploadFiles: UploadFile[] = await Promise.all(
+      fileArray.map(async (file) => {
+        const error = validateFile(file);
+
+        // For HEIC files, convert to JPEG for preview
+        let preview: string;
+        if (isHeicFile(file) && !error) {
+          preview = await convertHeicToJpeg(file);
+        } else {
+          preview = URL.createObjectURL(file);
+        }
+
+        return {
+          file,
+          preview,
+          status: error ? 'error' : 'pending',
+          progress: 0,
+          error: error || undefined,
+        } as UploadFile;
+      })
+    );
+
     setFiles((prev) => [...prev, ...uploadFiles]);
   }, []);
 
