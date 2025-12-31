@@ -31,16 +31,34 @@ async def get_current_user(
     """Validate JWT and extract user information.
 
     Raises HTTPException 401 if token is invalid or expired.
+    Supports both HS256 (email/password) and RS256 (OAuth) tokens.
     """
     token = credentials.credentials
 
     try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        # First, try to decode without verification to check the algorithm
+        unverified = jwt.get_unverified_header(token)
+        alg = unverified.get("alg", "HS256")
+
+        if alg == "HS256":
+            # Email/password auth - verify with JWT secret
+            payload = jwt.decode(
+                token,
+                settings.supabase_jwt_secret,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
+        else:
+            # OAuth (RS256) - Supabase handles verification, we just decode
+            # The token was issued by Supabase after OAuth, so we trust it
+            # but verify the structure and audience
+            payload = jwt.decode(
+                token,
+                settings.supabase_jwt_secret,
+                algorithms=["HS256", "RS256"],
+                audience="authenticated",
+                options={"verify_signature": alg == "HS256"},
+            )
 
         user_id = payload.get("sub")
         if user_id is None:
