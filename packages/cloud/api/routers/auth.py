@@ -3,6 +3,10 @@ from gotrue.errors import AuthApiError
 from pydantic import BaseModel, EmailStr
 
 from ..dependencies import CurrentUser, SupabaseClient
+from ..services.credits import CreditService
+
+# Number of free trial credits for new users
+FREE_TRIAL_CREDITS = 5
 
 router = APIRouter()
 
@@ -60,8 +64,9 @@ async def signup(request: SignupRequest, supabase: SupabaseClient):
                 detail="Please check your email to confirm your account",
             )
 
-        # Initialize credits for new user
-        supabase.table("credits").insert({"user_id": response.user.id, "balance": 0}).execute()
+        # Initialize credits for new user with trial credits
+        credit_service = CreditService(supabase)
+        await credit_service.grant_trial_credits(response.user.id, FREE_TRIAL_CREDITS)
 
         return AuthResponse(
             access_token=response.session.access_token,
@@ -120,16 +125,14 @@ async def logout(user: CurrentUser, supabase: SupabaseClient):
 
 @router.get("/me", response_model=UserInfo)
 async def get_current_user_info(user: CurrentUser, supabase: SupabaseClient):
-    """Get current user information including credit balance."""
-    # Fetch credit balance
-    result = supabase.table("credits").select("balance").eq("user_id", user.id).execute()
+    """Get current user information including credit balance.
 
-    balance = 0
-    if result.data:
-        balance = result.data[0].get("balance", 0)
-    else:
-        # Initialize credits if not exists (edge case)
-        supabase.table("credits").insert({"user_id": user.id, "balance": 0}).execute()
+    For new users (e.g., from social auth), this will automatically
+    grant trial credits on first call.
+    """
+    # Grant trial credits (idempotent - only grants if user has no credits record)
+    credit_service = CreditService(supabase)
+    balance = await credit_service.grant_trial_credits(user.id, FREE_TRIAL_CREDITS)
 
     return UserInfo(
         id=user.id,

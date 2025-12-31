@@ -67,7 +67,7 @@ export function Lightbox({
     } catch {
       return {};
     }
-  }, [photo?.features_json]);
+  }, [photo]);
 
   if (!photo) return null;
 

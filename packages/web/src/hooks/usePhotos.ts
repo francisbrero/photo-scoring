@@ -17,8 +17,9 @@ export function usePhotos(): UsePhotosResult {
       try {
         // In development, fetch from API
         // In production with embedded data, use window.__PHOTOS_DATA__
-        if (typeof window !== 'undefined' && (window as any).__PHOTOS_DATA__) {
-          setPhotos((window as any).__PHOTOS_DATA__);
+        const windowWithData = window as Window & { __PHOTOS_DATA__?: Photo[] };
+        if (typeof window !== 'undefined' && windowWithData.__PHOTOS_DATA__) {
+          setPhotos(windowWithData.__PHOTOS_DATA__);
           setLoading(false);
           return;
         }

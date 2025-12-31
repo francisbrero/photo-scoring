@@ -17,22 +17,22 @@ interface UseCorrectionsResult {
   correctionsCount: number;
 }
 
-export function useCorrections(): UseCorrectionsResult {
-  const [corrections, setCorrections] = useState<Record<string, Correction>>(
-    {}
-  );
-
-  // Load from localStorage on mount
-  useEffect(() => {
+function loadCorrectionsFromStorage(): Record<string, Correction> {
+  try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try {
-        setCorrections(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse saved corrections:', e);
-      }
+      return JSON.parse(saved);
     }
-  }, []);
+  } catch (e) {
+    console.error('Failed to parse saved corrections:', e);
+  }
+  return {};
+}
+
+export function useCorrections(): UseCorrectionsResult {
+  const [corrections, setCorrections] = useState<Record<string, Correction>>(
+    loadCorrectionsFromStorage
+  );
 
   // Save to localStorage when corrections change
   useEffect(() => {
