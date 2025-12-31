@@ -1,0 +1,72 @@
+export interface Photo {
+  image_path: string;
+  final_score: number;
+  aesthetic_score: number;
+  technical_score: number;
+  composition: number;
+  subject_strength: number;
+  visual_appeal: number;
+  sharpness: number;
+  exposure: number;
+  noise_level: number;
+  scene_type?: string;
+  lighting?: string;
+  subject_position?: string;
+  description?: string;
+  location_name?: string;
+  location_country?: string;
+  explanation?: string;
+  improvements?: string;
+  features_json?: string;
+  qwen_aesthetic?: number;
+  gpt4o_aesthetic?: number;
+  gemini_aesthetic?: number;
+}
+
+export interface PhotoFeatures {
+  color_palette?: string;
+  [key: string]: unknown;
+}
+
+export interface Correction {
+  image_path: string;
+  timestamp: string;
+  original_score?: number;
+  original_aesthetic?: number;
+  original_technical?: number;
+  score?: number;
+  composition?: number;
+  subject?: number;
+  appeal?: number;
+  notes?: string;
+}
+
+export type SortOption =
+  | 'score_desc'
+  | 'score_asc'
+  | 'name'
+  | 'aesthetic'
+  | 'technical';
+
+export type ScoreLevel =
+  | 'excellent'
+  | 'strong'
+  | 'competent'
+  | 'tourist'
+  | 'flawed';
+
+export function getScoreLevel(score: number): ScoreLevel {
+  if (score >= 85) return 'excellent';
+  if (score >= 70) return 'strong';
+  if (score >= 50) return 'competent';
+  if (score >= 30) return 'tourist';
+  return 'flawed';
+}
+
+export function getScoreLabel(score: number): string {
+  if (score >= 85) return 'Excellent';
+  if (score >= 70) return 'Strong';
+  if (score >= 50) return 'Competent';
+  if (score >= 30) return 'Tourist';
+  return 'Flawed';
+}

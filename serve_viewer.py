@@ -703,16 +703,73 @@ class PhotoHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
 
-        if parsed.path == "/" or parsed.path == "/index.html":
-            # Serve the viewer with embedded data
+        if parsed.path == "/api/photos":
+            # API endpoint for React frontend
             photos = parse_csv(CSV_FILE)
-            html = HTML_TEMPLATE.replace("PHOTOS_DATA", json.dumps(photos))
+            response = json.dumps(photos)
 
             self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            self.wfile.write(html.encode("utf-8"))
+            self.wfile.write(response.encode("utf-8"))
+
+        elif parsed.path == "/" or parsed.path == "/index.html":
+            # Check if React build exists, otherwise serve legacy HTML
+            react_dist = Path(__file__).parent / "packages" / "web" / "dist"
+            react_index = react_dist / "index.html"
+
+            if react_index.exists():
+                # Serve React app
+                with open(react_index, "r", encoding="utf-8") as f:
+                    html = f.read()
+                self.send_response(200)
+                self.send_header("Content-type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(html.encode("utf-8"))
+            else:
+                # Fallback to embedded HTML template
+                photos = parse_csv(CSV_FILE)
+                html = HTML_TEMPLATE.replace("PHOTOS_DATA", json.dumps(photos))
+
+                self.send_response(200)
+                self.send_header("Content-type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(html.encode("utf-8"))
+
+        elif parsed.path.startswith("/assets/"):
+            # Serve React static assets
+            react_dist = Path(__file__).parent / "packages" / "web" / "dist"
+            asset_path = react_dist / parsed.path.lstrip("/")
+
+            if asset_path.exists() and asset_path.is_file():
+                # Determine content type
+                suffix = asset_path.suffix.lower()
+                content_types = {
+                    ".js": "application/javascript",
+                    ".css": "text/css",
+                    ".svg": "image/svg+xml",
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".woff": "font/woff",
+                    ".woff2": "font/woff2",
+                }
+                content_type = content_types.get(suffix, "application/octet-stream")
+
+                with open(asset_path, "rb") as f:
+                    data = f.read()
+
+                self.send_response(200)
+                self.send_header("Content-type", content_type)
+                self.send_header("Content-Length", len(data))
+                self.send_header("Cache-Control", "public, max-age=31536000")
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_error(404, f"Asset not found: {parsed.path}")
 
         elif parsed.path.startswith("/photos/"):
             # Serve photo files (converted to JPEG)

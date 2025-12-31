@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* Custom theme for Photo Score Viewer */
+@theme inline {
+  /* Background colors */
+  --color-ps-bg: #1a1a2e;
+  --color-ps-card: #16213e;
+  --color-ps-accent: #0f3460;
+  --color-ps-highlight: #e94560;
+
+  /* Score colors */
+  --color-score-excellent: #4ade80;
+  --color-score-strong: #a3e635;
+  --color-score-competent: #facc15;
+  --color-score-tourist: #fb923c;
+  --color-score-flawed: #f87171;
+}
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Dark theme (default) CSS variables */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f3460;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #0f3460;
+}
+
+.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e2e8f0;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+}
