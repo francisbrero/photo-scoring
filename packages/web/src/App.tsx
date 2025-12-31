@@ -23,13 +23,14 @@ function App() {
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // Build list of image sources for lightbox navigation
+  // Get current photo for lightbox
+  const lightboxPhoto = lightboxIndex !== null ? sortedPhotos[lightboxIndex] : null;
+
+  // Build list of image sources for matching clicked image to index
   const imageSources = useMemo(
     () => sortedPhotos.map((p) => `/photos/${encodeURIComponent(p.image_path)}`),
     [sortedPhotos]
   );
-
-  const lightboxSrc = lightboxIndex !== null ? imageSources[lightboxIndex] : null;
 
   const openLightbox = useCallback(
     (src: string) => {
@@ -104,12 +105,12 @@ function App() {
       />
 
       <Lightbox
-        src={lightboxSrc}
+        photo={lightboxPhoto}
         onClose={closeLightbox}
         onPrev={goToPrev}
         onNext={goToNext}
         hasPrev={lightboxIndex !== null && lightboxIndex > 0}
-        hasNext={lightboxIndex !== null && lightboxIndex < imageSources.length - 1}
+        hasNext={lightboxIndex !== null && lightboxIndex < sortedPhotos.length - 1}
       />
     </Layout>
   );
