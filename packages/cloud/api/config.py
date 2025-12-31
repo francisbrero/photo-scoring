@@ -25,7 +25,11 @@ class Settings(BaseSettings):
 
     # Application settings
     debug: bool = False
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://photo-scoring.spraiandprai.com",
+    ]
 
     @property
     def supabase_anon_key(self) -> str:
