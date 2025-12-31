@@ -24,6 +24,13 @@ class PhotoResponse(BaseModel):
     final_score: float | None
     aesthetic_score: float | None
     technical_score: float | None
+    # Individual attribute scores (0-1 scale)
+    composition: float | None
+    subject_strength: float | None
+    visual_appeal: float | None
+    sharpness: float | None
+    exposure: float | None
+    noise_level: float | None
     description: str | None
     explanation: str | None
     improvements: str | None
@@ -108,6 +115,12 @@ async def list_photos(
                 final_score=row.get("final_score"),
                 aesthetic_score=row.get("aesthetic_score"),
                 technical_score=row.get("technical_score"),
+                composition=model_scores.get("composition"),
+                subject_strength=model_scores.get("subject_strength"),
+                visual_appeal=model_scores.get("visual_appeal"),
+                sharpness=model_scores.get("sharpness"),
+                exposure=model_scores.get("exposure_balance"),
+                noise_level=model_scores.get("noise_level"),
                 description=row.get("description"),
                 explanation=row.get("explanation"),
                 improvements=row.get("improvements"),
@@ -177,6 +190,12 @@ async def get_photo(
         final_score=row.get("final_score"),
         aesthetic_score=row.get("aesthetic_score"),
         technical_score=row.get("technical_score"),
+        composition=model_scores.get("composition"),
+        subject_strength=model_scores.get("subject_strength"),
+        visual_appeal=model_scores.get("visual_appeal"),
+        sharpness=model_scores.get("sharpness"),
+        exposure=model_scores.get("exposure_balance"),
+        noise_level=model_scores.get("noise_level"),
         description=row.get("description"),
         explanation=row.get("explanation"),
         improvements=row.get("improvements"),
