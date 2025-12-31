@@ -40,7 +40,8 @@ export function usePhotos(): UsePhotosResult {
         throw new Error(`Failed to fetch photos: ${response.statusText}`);
       }
       const data = await response.json();
-      setPhotos(data);
+      // API returns { photos: [...] }, extract the array
+      setPhotos(data.photos || data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load photos');
     } finally {
