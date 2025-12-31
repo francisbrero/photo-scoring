@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { apiFetch } from '../lib/api';
 
 interface UploadFile {
   file: File;
@@ -110,7 +111,7 @@ export function Upload() {
         formData.append('file', uploadFile.file);
 
         // Upload to backend
-        const response = await fetch('/api/photos/upload', {
+        const response = await apiFetch('/api/photos/upload', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -138,7 +139,7 @@ export function Upload() {
         });
 
         // Trigger scoring
-        const scoreResponse = await fetch(`/api/photos/${result.id}/score`, {
+        const scoreResponse = await apiFetch(`/api/photos/${result.id}/score`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${session.access_token}`,

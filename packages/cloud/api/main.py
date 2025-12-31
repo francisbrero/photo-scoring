@@ -44,10 +44,10 @@ def create_app() -> FastAPI:
         """Health check endpoint for Railway deployment."""
         return {"status": "healthy", "version": "0.1.0"}
 
-    # Include routers
-    app.include_router(auth.router, prefix="/auth", tags=["auth"])
-    app.include_router(billing.router, prefix="/billing", tags=["billing"])
-    app.include_router(inference.router, prefix="/inference", tags=["inference"])
+    # Include routers - all API routes under /api prefix
+    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+    app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
+    app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
     app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
     app.include_router(photo_serve.router, prefix="/photos", tags=["photos"])
 

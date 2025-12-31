@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { User, Session, AuthError, Provider } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -34,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch user info (and trigger trial credit grant for new users)
   const fetchUserInfo = useCallback(async (accessToken: string) => {
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await apiFetch('/api/auth/me', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
