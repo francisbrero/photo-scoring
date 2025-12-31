@@ -4,30 +4,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Personal Photo Scoring CLI - a command-line tool that recursively analyzes photo collections using vision models (Claude 3.5 Sonnet via OpenRouter) and produces CSV rankings with diagnostic explanations. Optimizes for reproducibility, debuggability, and fast iteration on aesthetic preferences.
+Photo Scoring CLI - analyzes photo collections using multiple vision models (Qwen, Gemini via OpenRouter), scores them on aesthetic and technical quality, and produces ranked CSV output with AI-generated critiques.
 
 **Core principle**: Inference once, score many times. Vision model inference is cached in `~/.photo_score/cache.db`; scoring/explanation logic runs instantly from cached attributes.
+
+**Cost**: ~$0.005 per image (7 API calls)
+
+## Quick Start
+
+```bash
+# Install dependencies
+uv sync
+
+# Set API key
+export OPENROUTER_API_KEY="your-key"
+
+# Score photos
+uv run python calibrate.py -i /path/to/photos -o results.csv
+
+# View results in web UI
+uv run python serve_viewer.py --photos /path/to/photos --csv results.csv
+# Open http://localhost:8080
+```
+
+## Claude Code Skills
+
+Use these slash commands for common tasks:
+
+- `/score-photos [directory]` - Score a batch of photos
+- `/start-viewer [csv] [photos]` - Start the web viewer
+- `/run-tests` - Run test suite with coverage
+- `/check-costs [count]` - Estimate API costs
 
 ## Build and Development Commands
 
 ```bash
-# Install dependencies
-pip install -e ".[dev]"
+# Install dependencies (with uv - recommended)
+uv sync --dev
 
 # Run tests
-pytest
+uv run pytest -v
 
-# Run single test file
-pytest tests/test_reducer.py
+# Run tests with coverage
+uv run pytest --cov=photo_score --cov-report=term-missing
 
-# Run with coverage
-pytest --cov=photo_score
+# Lint and format
+uv run ruff check .
+uv run ruff format .
 
-# Run the CLI
-photo-score run --input ./photos --config ./configs/default.yaml --output ./scores.csv
+# Auto-fix issues
+uv run ruff check --fix .
+uv run ruff format .
 
-# Re-score with different weights (no inference, uses cache)
-photo-score rescore --input ./photos --config ./configs/custom.yaml --output ./scores.csv
+# Run calibration script
+uv run python calibrate.py -i ./test_photos -o results.csv -n 10
+
+# Start web viewer
+uv run python serve_viewer.py --photos ./test_photos --csv results.csv
 ```
 
 ## Environment Variables
