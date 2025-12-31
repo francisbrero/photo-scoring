@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Custom theme for Photo Score Viewer */
-@theme {
+@theme inline {
   /* Background colors */
   --color-ps-bg: #1a1a2e;
   --color-ps-card: #16213e;
@@ -24,12 +24,25 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Dark theme (default) CSS variables */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f3460;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #0f3460;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e2e8f0;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
 }
 
 body {

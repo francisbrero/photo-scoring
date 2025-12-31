@@ -19,7 +19,7 @@ interface PhotoCardProps {
 function formatExplanation(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-ps-highlight">$1</strong>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong style="color: #e94560">$1</strong>')
     .split('\n\n')
     .map((p) => p.trim())
     .filter((p) => p)
@@ -31,16 +31,16 @@ function formatImprovement(text: string): string {
   if (!text) return '';
   return text.replace(
     /\*\*([^*]+)\*\*/g,
-    '<strong class="text-score-excellent">$1</strong>'
+    '<strong style="color: #4ade80">$1</strong>'
   );
 }
 
 const scoreColorClasses: Record<string, string> = {
-  excellent: 'text-score-excellent',
-  strong: 'text-score-strong',
-  competent: 'text-score-competent',
-  tourist: 'text-score-tourist',
-  flawed: 'text-score-flawed',
+  excellent: 'text-[#4ade80]',
+  strong: 'text-[#a3e635]',
+  competent: 'text-[#facc15]',
+  tourist: 'text-[#fb923c]',
+  flawed: 'text-[#f87171]',
 };
 
 const scoreLabelClasses: Record<string, string> = {
@@ -72,24 +72,24 @@ export function PhotoCard({
   const imageSrc = `/photos/${encodeURIComponent(photo.image_path)}`;
 
   return (
-    <div className="bg-ps-card rounded-xl overflow-hidden shadow-lg hover:-translate-y-1 transition-transform duration-200">
+    <div className="bg-[var(--bg-secondary)] rounded-xl overflow-hidden shadow-lg hover:-translate-y-1 transition-transform duration-200">
       {/* Image */}
       <img
         src={imageSrc}
         alt={photo.image_path}
         onClick={() => onImageClick(imageSrc)}
         loading="lazy"
-        className="w-full h-[300px] object-cover cursor-pointer bg-ps-accent"
+        className="w-full h-[300px] object-cover cursor-pointer bg-[var(--bg-tertiary)]"
       />
 
       <div className="p-4">
         {/* Filename */}
-        <div className="font-bold text-sm text-gray-400 mb-2.5 break-all">
+        <div className="font-bold text-sm text-[var(--text-secondary)] mb-2 break-all">
           {photo.image_path}
         </div>
 
         {/* Score Row */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div className={`text-4xl font-bold ${scoreColorClasses[scoreLevel]}`}>
             {score.toFixed(1)}
           </div>
@@ -108,30 +108,30 @@ export function PhotoCard({
 
         {/* Description */}
         {photo.description && (
-          <div className="text-sm text-gray-300 mb-2.5 leading-relaxed">
+          <div className="text-sm text-[var(--text-secondary)] mb-3 leading-relaxed">
             {photo.description}
           </div>
         )}
 
         {/* Tags */}
-        <div className="flex flex-wrap gap-1.5 mb-4">
+        <div className="flex flex-wrap gap-2 mb-4">
           {photo.scene_type && (
-            <span className="bg-ps-accent px-2.5 py-1 rounded-full text-xs text-gray-400">
+            <span className="bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-xs text-[var(--text-secondary)]">
               {photo.scene_type}
             </span>
           )}
           {photo.lighting && (
-            <span className="bg-ps-accent px-2.5 py-1 rounded-full text-xs text-gray-400">
+            <span className="bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-xs text-[var(--text-secondary)]">
               {photo.lighting}
             </span>
           )}
           {photo.subject_position && (
-            <span className="bg-ps-accent px-2.5 py-1 rounded-full text-xs text-gray-400">
+            <span className="bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-xs text-[var(--text-secondary)]">
               {photo.subject_position}
             </span>
           )}
           {features.color_palette && (
-            <span className="bg-ps-accent px-2.5 py-1 rounded-full text-xs text-gray-400">
+            <span className="bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-xs text-[var(--text-secondary)]">
               {features.color_palette}
             </span>
           )}
@@ -139,16 +139,16 @@ export function PhotoCard({
 
         {/* Location */}
         {photo.location_name && (
-          <div className="text-sm text-ps-highlight mb-2.5">
+          <div className="text-sm text-[#e94560] mb-3">
             📍 {photo.location_name}
             {photo.location_country && `, ${photo.location_country}`}
           </div>
         )}
 
-        {/* Cost Badge */}
-        <div className="mb-2.5">
-          <span className="inline-block bg-ps-accent px-2.5 py-1 rounded-full text-[11px] text-score-excellent">
-            💰 ~$0.005 LLM cost
+        {/* Credit Badge */}
+        <div className="mb-3">
+          <span className="inline-block bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-[11px] text-[#4ade80]">
+            1 credit
           </span>
         </div>
 
@@ -171,7 +171,7 @@ export function PhotoCard({
               {photo.improvements.split(' | ').map((imp, i) => (
                 <div
                   key={i}
-                  className="text-sm text-gray-400 p-2.5 bg-ps-accent rounded-md mb-2 last:mb-0 leading-relaxed"
+                  className="text-sm text-gray-400 p-2.5 bg-[#0f3460] rounded-md mb-2 last:mb-0 leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: formatImprovement(imp) }}
                 />
               ))}
@@ -180,9 +180,9 @@ export function PhotoCard({
         )}
 
         {/* Model Scores */}
-        <div className="text-[11px] text-gray-600 mt-2.5">
-          {photo.qwen_aesthetic && <span className="mr-2.5">Qwen: {photo.qwen_aesthetic}</span>}
-          {photo.gpt4o_aesthetic && <span className="mr-2.5">GPT: {photo.gpt4o_aesthetic}</span>}
+        <div className="text-[11px] text-[var(--text-muted)] mt-2 mb-3">
+          {photo.qwen_aesthetic && <span className="mr-3">Qwen: {photo.qwen_aesthetic}</span>}
+          {photo.gpt4o_aesthetic && <span className="mr-3">GPT: {photo.gpt4o_aesthetic}</span>}
           {photo.gemini_aesthetic && <span>Gemini: {photo.gemini_aesthetic}</span>}
         </div>
 

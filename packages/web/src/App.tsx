@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Layout } from './components/Layout';
 import { FilterBar } from './components/FilterBar';
 import { PhotoGrid } from './components/PhotoGrid';
@@ -7,6 +7,7 @@ import { ExportPanel } from './components/ExportPanel';
 import { usePhotos } from './hooks/usePhotos';
 import { useFilters } from './hooks/useFilters';
 import { useCorrections } from './hooks/useCorrections';
+import { useTheme } from './hooks/useTheme';
 
 function App() {
   const { photos, loading, error } = usePhotos();
@@ -18,8 +19,39 @@ function App() {
     exportCSV,
     correctionsCount,
   } = useCorrections();
+  const { theme, toggleTheme } = useTheme();
 
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Build list of image sources for lightbox navigation
+  const imageSources = useMemo(
+    () => sortedPhotos.map((p) => `/photos/${encodeURIComponent(p.image_path)}`),
+    [sortedPhotos]
+  );
+
+  const lightboxSrc = lightboxIndex !== null ? imageSources[lightboxIndex] : null;
+
+  const openLightbox = useCallback(
+    (src: string) => {
+      const index = imageSources.indexOf(src);
+      if (index !== -1) {
+        setLightboxIndex(index);
+      }
+    },
+    [imageSources]
+  );
+
+  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+
+  const goToPrev = useCallback(() => {
+    setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+  }, []);
+
+  const goToNext = useCallback(() => {
+    setLightboxIndex((prev) =>
+      prev !== null && prev < imageSources.length - 1 ? prev + 1 : prev
+    );
+  }, [imageSources.length]);
 
   if (loading) {
     return (
@@ -52,13 +84,13 @@ function App() {
   }
 
   return (
-    <Layout>
+    <Layout photoCount={photos.length} avgScore={stats.avg} theme={theme} onThemeToggle={toggleTheme}>
       <FilterBar sortBy={sortBy} onSortChange={setSortBy} stats={stats} />
 
       <PhotoGrid
         photos={sortedPhotos}
         corrections={corrections}
-        onImageClick={setLightboxSrc}
+        onImageClick={openLightbox}
         onCorrectionUpdate={(imagePath, field, value, photo) =>
           updateCorrection(imagePath, field, value, photo)
         }
@@ -71,7 +103,14 @@ function App() {
         photos={photos}
       />
 
-      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      <Lightbox
+        src={lightboxSrc}
+        onClose={closeLightbox}
+        onPrev={goToPrev}
+        onNext={goToNext}
+        hasPrev={lightboxIndex !== null && lightboxIndex > 0}
+        hasNext={lightboxIndex !== null && lightboxIndex < imageSources.length - 1}
+      />
     </Layout>
   );
 }

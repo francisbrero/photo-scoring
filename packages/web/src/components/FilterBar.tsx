@@ -18,7 +18,7 @@ export function FilterBar({ sortBy, onSortChange, stats }: FilterBarProps) {
         <select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortOption)}
-          className="bg-ps-card border border-ps-accent text-gray-200 px-5 py-2.5 rounded-lg cursor-pointer hover:bg-ps-accent transition-colors"
+          className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] px-5 py-2.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
         >
           <option value="score_desc">Score (High to Low)</option>
           <option value="score_asc">Score (Low to High)</option>
@@ -27,7 +27,7 @@ export function FilterBar({ sortBy, onSortChange, stats }: FilterBarProps) {
           <option value="technical">Technical Score</option>
         </select>
       </div>
-      <div className="text-center text-gray-500">
+      <div className="text-center text-[var(--text-muted)]">
         {stats.count} photos | Avg: {stats.avg.toFixed(1)} | Range:{' '}
         {stats.min.toFixed(1)} - {stats.max.toFixed(1)}
       </div>
