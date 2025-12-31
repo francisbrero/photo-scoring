@@ -405,6 +405,148 @@ class OpenRouterService:
         }
 
     @staticmethod
+    def generate_explanation(attributes: dict, final_score: float) -> str:
+        """Generate a critique/explanation based on the scores.
+
+        Args:
+            attributes: Dict with the 6 normalized attributes
+            final_score: Final computed score (0-100)
+
+        Returns:
+            Human-readable explanation string
+        """
+        attr_names = {
+            "composition": "composition",
+            "subject_strength": "subject clarity",
+            "visual_appeal": "visual appeal",
+            "sharpness": "sharpness",
+            "exposure_balance": "exposure",
+            "noise_level": "low noise",
+        }
+
+        attr_values = {
+            "composition": attributes.get("composition", 0.5),
+            "subject_strength": attributes.get("subject_strength", 0.5),
+            "visual_appeal": attributes.get("visual_appeal", 0.5),
+            "sharpness": attributes.get("sharpness", 0.5),
+            "exposure_balance": attributes.get("exposure_balance", 0.5),
+            "noise_level": attributes.get("noise_level", 0.5),
+        }
+
+        # Sort by value to find strengths and weaknesses
+        sorted_attrs = sorted(attr_values.items(), key=lambda x: x[1], reverse=True)
+
+        # Find strong attributes (>= 0.7) and weak ones (< 0.5)
+        strong = [(a, v) for a, v in sorted_attrs if v >= 0.7]
+        weak = [(a, v) for a, v in sorted_attrs if v < 0.5]
+
+        parts = []
+
+        # Score tier description
+        if final_score >= 70:
+            tier = "**Near-publishable**"
+        elif final_score >= 55:
+            tier = "**Competent but unremarkable**"
+        elif final_score >= 40:
+            tier = "**Tourist-level**"
+        else:
+            tier = "**Flawed**"
+
+        # Build explanation
+        if strong:
+            strong_names = [attr_names[a] for a, _ in strong[:2]]
+            if len(strong_names) == 2:
+                parts.append(f"{tier}. Strong {strong_names[0]} and {strong_names[1]}.")
+            else:
+                parts.append(f"{tier}. Strong {strong_names[0]}.")
+        else:
+            parts.append(f"{tier}. No standout qualities.")
+
+        # Weaknesses
+        if weak:
+            weak_sorted = sorted(weak, key=lambda x: x[1])
+            weakest = weak_sorted[0]
+            weak_name = attr_names[weakest[0]]
+            if weakest[1] < 0.35:
+                parts.append(f"Weak {weak_name} hurts the image.")
+            else:
+                parts.append(f"{weak_name.capitalize()} is mediocre.")
+
+        # Aesthetic vs technical gap insight
+        aes_avg = (
+            attr_values["composition"]
+            + attr_values["subject_strength"]
+            + attr_values["visual_appeal"]
+        ) / 3
+        tech_avg = (
+            attr_values["sharpness"]
+            + attr_values["exposure_balance"]
+            + attr_values["noise_level"]
+        ) / 3
+
+        if tech_avg - aes_avg > 0.15:
+            parts.append("Technically fine but aesthetically weak.")
+        elif aes_avg - tech_avg > 0.15:
+            parts.append("Good eye, execution could improve.")
+
+        return " ".join(parts)
+
+    @staticmethod
+    def generate_improvements(attributes: dict) -> str:
+        """Generate improvement suggestions based on weak attributes.
+
+        Args:
+            attributes: Dict with the 6 normalized attributes
+
+        Returns:
+            Bullet-pointed improvement suggestions
+        """
+        suggestions = []
+
+        comp = attributes.get("composition", 0.5)
+        subj = attributes.get("subject_strength", 0.5)
+        appeal = attributes.get("visual_appeal", 0.5)
+        sharp = attributes.get("sharpness", 0.5)
+        exp = attributes.get("exposure_balance", 0.5)
+        noise = attributes.get("noise_level", 0.5)
+
+        if comp < 0.5:
+            suggestions.append(
+                "**Composition**: Try the rule of thirds, lead the eye with lines, "
+                "or eliminate distracting elements from the frame."
+            )
+        if subj < 0.5:
+            suggestions.append(
+                "**Subject clarity**: Make your subject more prominent. "
+                "Use depth of field, contrast, or positioning to draw attention."
+            )
+        if appeal < 0.5:
+            suggestions.append(
+                "**Visual appeal**: Look for interesting light, decisive moments, "
+                "or unique perspectives that create emotional impact."
+            )
+        if sharp < 0.5:
+            suggestions.append(
+                "**Sharpness**: Use a faster shutter speed, stabilize your camera, "
+                "or ensure focus is on your subject."
+            )
+        if exp < 0.5:
+            suggestions.append(
+                "**Exposure**: Check histogram for clipping. "
+                "Consider bracketing or using exposure compensation."
+            )
+        if noise < 0.5:
+            suggestions.append(
+                "**Noise**: Lower your ISO, use better lighting, "
+                "or apply noise reduction in post-processing."
+            )
+
+        if not suggestions:
+            return "This is a strong image. Minor refinements in post-processing could enhance it further."
+
+        return "\n\n".join(suggestions)
+
+    @staticmethod
     def compute_image_hash(image_data: bytes) -> str:
         """Compute SHA256 hash of image data."""
         return hashlib.sha256(image_data).hexdigest()

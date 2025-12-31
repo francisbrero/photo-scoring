@@ -531,6 +531,10 @@ async def score_photo(
     # Compute scores from attributes
     scores = inference_service.compute_scores(attributes)
 
+    # Generate explanation and improvements
+    explanation = inference_service.generate_explanation(attributes, scores["final_score"])
+    improvements = inference_service.generate_improvements(attributes)
+
     # Get metadata (description, location) - try cache first
     metadata_cache = (
         supabase.table("metadata_cache")
@@ -572,13 +576,15 @@ async def score_photo(
             # Metadata extraction is optional, don't fail the whole request
             pass
 
-    # Update photo with scores and metadata
+    # Update photo with scores, metadata, explanation, and improvements
     supabase.table("scored_photos").update(
         {
             "final_score": scores["final_score"],
             "aesthetic_score": scores["aesthetic_score"],
             "technical_score": scores["technical_score"],
             "description": description,
+            "explanation": explanation,
+            "improvements": improvements,
             "location_name": location_name,
             "location_country": location_country,
             "model_scores": {
