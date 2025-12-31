@@ -16,3 +16,5 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     supabase_service_key: str
     supabase_jwt_secret: str
 
+    # OpenRouter API for inference
+    openrouter_api_key: str
+
     # Application settings
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
