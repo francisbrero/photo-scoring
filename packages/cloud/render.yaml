@@ -1,0 +1,17 @@
+# Render Blueprint specification
+# https://docs.render.com/blueprint-spec
+
+services:
+  - type: web
+    name: photo-score-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
