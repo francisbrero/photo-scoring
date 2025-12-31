@@ -4,7 +4,7 @@ import { PhotoCard } from './PhotoCard';
 interface PhotoGridProps {
   photos: Photo[];
   corrections: Record<string, Correction>;
-  onImageClick: (src: string) => void;
+  onImageClick: (photo: Photo) => void;
   onCorrectionUpdate: (
     imagePath: string,
     field: keyof Correction,
@@ -23,7 +23,7 @@ export function PhotoGrid({
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5 max-w-[1800px] mx-auto">
       {photos.map((photo) => (
         <PhotoCard
-          key={photo.image_path}
+          key={photo.id || photo.image_path}
           photo={photo}
           correction={corrections[photo.image_path]}
           onImageClick={onImageClick}
