@@ -16,6 +16,14 @@ from pathlib import Path
 import httpx
 from PIL import Image, ImageOps
 
+# Register HEIC/HEIF support
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass  # pillow-heif not installed
+
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
