@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { FilterBar } from '../components/FilterBar';
 import { PhotoGrid } from '../components/PhotoGrid';
@@ -7,9 +7,10 @@ import { ExportPanel } from '../components/ExportPanel';
 import { usePhotos } from '../hooks/usePhotos';
 import { useFilters } from '../hooks/useFilters';
 import { useCorrections } from '../hooks/useCorrections';
+import type { Photo } from '../types/photo';
 
 export function Dashboard() {
-  const { photos, loading, error } = usePhotos();
+  const { photos, setPhotos, loading, error } = usePhotos();
   const { sortBy, setSortBy, sortedPhotos, stats } = useFilters(photos);
   const {
     corrections,
@@ -24,20 +25,24 @@ export function Dashboard() {
   // Get current photo for lightbox
   const lightboxPhoto = lightboxIndex !== null ? sortedPhotos[lightboxIndex] : null;
 
-  // Build list of image sources for matching clicked image to index
-  const imageSources = useMemo(
-    () => sortedPhotos.map((p) => `/photos/${encodeURIComponent(p.image_path)}`),
-    [sortedPhotos]
-  );
-
   const openLightbox = useCallback(
-    (src: string) => {
-      const index = imageSources.indexOf(src);
+    (photo: Photo) => {
+      const index = sortedPhotos.findIndex((p) => p.id === photo.id);
       if (index !== -1) {
         setLightboxIndex(index);
       }
     },
-    [imageSources]
+    [sortedPhotos]
+  );
+
+  // Handle photo update from Lightbox (e.g., after reprocessing)
+  const handlePhotoUpdated = useCallback(
+    (updatedPhoto: Photo) => {
+      setPhotos((prev) =>
+        prev.map((p) => (p.id === updatedPhoto.id ? updatedPhoto : p))
+      );
+    },
+    [setPhotos]
   );
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
@@ -48,9 +53,9 @@ export function Dashboard() {
 
   const goToNext = useCallback(() => {
     setLightboxIndex((prev) =>
-      prev !== null && prev < imageSources.length - 1 ? prev + 1 : prev
+      prev !== null && prev < sortedPhotos.length - 1 ? prev + 1 : prev
     );
-  }, [imageSources.length]);
+  }, [sortedPhotos.length]);
 
   if (loading) {
     return (
@@ -117,6 +122,7 @@ export function Dashboard() {
         onNext={goToNext}
         hasPrev={lightboxIndex !== null && lightboxIndex > 0}
         hasNext={lightboxIndex !== null && lightboxIndex < sortedPhotos.length - 1}
+        onPhotoUpdated={handlePhotoUpdated}
       />
     </>
   );

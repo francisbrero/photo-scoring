@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface UsePhotosResult {
   photos: Photo[];
+  setPhotos: React.Dispatch<React.SetStateAction<Photo[]>>;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -53,5 +54,5 @@ export function usePhotos(): UsePhotosResult {
     fetchPhotos();
   }, [session?.access_token]);
 
-  return { photos, loading, error, refetch: fetchPhotos };
+  return { photos, setPhotos, loading, error, refetch: fetchPhotos };
 }

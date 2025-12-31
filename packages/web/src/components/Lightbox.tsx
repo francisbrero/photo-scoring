@@ -1,6 +1,8 @@
-import { useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import type { Photo, PhotoFeatures } from '../types/photo';
 import { getScoreLevel, getScoreLabel } from '../types/photo';
+import { apiFetch } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LightboxProps {
   photo: Photo | null;
@@ -9,6 +11,7 @@ interface LightboxProps {
   onNext?: () => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  onPhotoUpdated?: (photo: Photo) => void;
 }
 
 const scoreColorClasses: Record<string, string> = {
@@ -34,7 +37,51 @@ export function Lightbox({
   onNext,
   hasPrev = false,
   hasNext = false,
+  onPhotoUpdated,
 }: LightboxProps) {
+  const { session } = useAuth();
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const [reprocessError, setReprocessError] = useState<string | null>(null);
+
+  const handleReprocess = async () => {
+    if (!photo || !session?.access_token) return;
+
+    setIsReprocessing(true);
+    setReprocessError(null);
+
+    try {
+      const response = await apiFetch(`/api/photos/${photo.id}/regenerate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to reprocess');
+      }
+
+      // Refresh the photo data
+      const photoResponse = await apiFetch(`/api/photos/${photo.id}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (photoResponse.ok) {
+        const updatedPhoto = await photoResponse.json();
+        if (onPhotoUpdated) {
+          onPhotoUpdated(updatedPhoto);
+        }
+      }
+    } catch (err) {
+      setReprocessError(err instanceof Error ? err.message : 'Failed to reprocess');
+    } finally {
+      setIsReprocessing(false);
+    }
+  };
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -71,8 +118,8 @@ export function Lightbox({
 
   if (!photo) return null;
 
-  const imageSrc = `/photos/${encodeURIComponent(photo.image_path)}`;
-  const score = photo.final_score;
+  const imageSrc = photo.image_url;
+  const score = photo.final_score ?? 0;
   const scoreLevel = getScoreLevel(score);
 
   return (
@@ -123,11 +170,22 @@ export function Lightbox({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Image */}
-        <img
-          src={imageSrc}
-          alt={photo.image_path}
-          className="max-w-full max-h-[70vh] object-contain rounded-lg"
-        />
+        {imageSrc ? (
+          <img
+            src={imageSrc}
+            alt={photo.image_path}
+            className="max-w-full max-h-[70vh] object-contain rounded-lg"
+          />
+        ) : (
+          <div className="w-full max-w-2xl h-[50vh] bg-gray-800 rounded-lg flex items-center justify-center">
+            <div className="text-center text-gray-400">
+              <svg className="w-16 h-16 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>Image unavailable</span>
+            </div>
+          </div>
+        )}
 
         {/* Photo info */}
         <div className="w-full max-w-3xl mt-6 text-white">
@@ -223,14 +281,44 @@ export function Lightbox({
             <div className="mb-6">
               <div className="text-xs text-gray-400 uppercase mb-2">💡 How to Improve</div>
               <div className="space-y-2">
-                {photo.improvements.split(' | ').map((imp, i) => (
-                  <div key={i} className="bg-white/5 p-3 rounded-lg text-gray-300">
-                    {imp}
-                  </div>
+                {photo.improvements.split('\n\n').map((imp, i) => (
+                  <div
+                    key={i}
+                    className="bg-white/5 p-3 rounded-lg text-gray-300"
+                    dangerouslySetInnerHTML={{
+                      __html: imp.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-[#4ade80]">$1</strong>')
+                    }}
+                  />
                 ))}
               </div>
             </div>
           )}
+
+          {/* Reprocess button */}
+          <div className="mb-6">
+            <button
+              onClick={handleReprocess}
+              disabled={isReprocessing}
+              className="px-4 py-2 bg-[#e94560] text-white rounded-lg hover:bg-[#c73e54] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isReprocessing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Reprocessing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Regenerate Critique
+                </>
+              )}
+            </button>
+            {reprocessError && (
+              <div className="mt-2 text-sm text-red-400">{reprocessError}</div>
+            )}
+          </div>
 
           {/* Model scores */}
           <div className="text-xs text-gray-500 mb-8">
