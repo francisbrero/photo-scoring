@@ -76,7 +76,7 @@ class TestImageProcessing:
         monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-        from api.services.openrouter import OpenRouterService, MAX_IMAGE_DIMENSION
+        from api.services.openrouter import MAX_IMAGE_DIMENSION, OpenRouterService
 
         service = OpenRouterService()
 
@@ -101,7 +101,7 @@ class TestImageProcessing:
         monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-        from api.services.openrouter import OpenRouterService, InferenceError
+        from api.services.openrouter import InferenceError, OpenRouterService
 
         service = OpenRouterService()
 
@@ -115,7 +115,7 @@ class TestImageProcessing:
         monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-        from api.services.openrouter import OpenRouterService, InferenceError
+        from api.services.openrouter import InferenceError, OpenRouterService
 
         service = OpenRouterService()
 
