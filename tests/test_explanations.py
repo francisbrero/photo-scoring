@@ -23,7 +23,7 @@ class TestExplanationGenerator:
     """Tests for ExplanationGenerator."""
 
     def test_high_score_explanation(self, generator: ExplanationGenerator):
-        """High score should mention 'scores highly'."""
+        """High score should indicate near-publishable quality."""
         attrs = NormalizedAttributes(
             image_id="test",
             composition=0.9,
@@ -42,10 +42,10 @@ class TestExplanationGenerator:
             "noise_level": 0.10,
         }
         explanation = generator.generate(attrs, contributions, 85.0)
-        assert "scores highly" in explanation
+        assert "Near-publishable" in explanation
 
     def test_low_score_explanation(self, generator: ExplanationGenerator):
-        """Low score should mention 'scores lower'."""
+        """Low score should indicate flawed quality."""
         attrs = NormalizedAttributes(
             image_id="test",
             composition=0.3,
@@ -64,10 +64,10 @@ class TestExplanationGenerator:
             "noise_level": 0.03,
         }
         explanation = generator.generate(attrs, contributions, 35.0)
-        assert "scores lower" in explanation
+        assert "Flawed" in explanation
 
     def test_penalty_mentioned(self, generator: ExplanationGenerator):
-        """Weak attributes should be mentioned as penalties."""
+        """Weak attributes should be mentioned as hurting the image."""
         attrs = NormalizedAttributes(
             image_id="test",
             composition=0.9,
@@ -86,7 +86,7 @@ class TestExplanationGenerator:
             "noise_level": 0.10,
         }
         explanation = generator.generate(attrs, contributions, 70.0)
-        assert "penalized" in explanation.lower()
+        assert "sharpness" in explanation.lower() and "hurts" in explanation.lower()
 
     def test_determinism(self, generator: ExplanationGenerator):
         """Same inputs should yield identical explanations."""
