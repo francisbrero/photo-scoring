@@ -157,9 +157,23 @@ async def get_photo(
     row = result.data[0]
     model_scores = row.get("model_scores") or {}
 
+    # Generate signed URL for the image
+    image_url = None
+    storage_path = row.get("storage_path")
+    if storage_path:
+        try:
+            signed_url_response = supabase.storage.from_("photos").create_signed_url(
+                storage_path, expires_in=3600
+            )
+            if signed_url_response and "signedURL" in signed_url_response:
+                image_url = signed_url_response["signedURL"]
+        except Exception:
+            pass  # Skip if signed URL generation fails
+
     return PhotoResponse(
         id=row["id"],
         image_path=row["storage_path"],
+        image_url=image_url,
         final_score=row.get("final_score"),
         aesthetic_score=row.get("aesthetic_score"),
         technical_score=row.get("technical_score"),
@@ -324,7 +338,9 @@ async def upload_photo(
 
     # Convert HEIC/HEIF to JPEG for browser compatibility
     content_type = file.content_type
-    file_ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else "jpg"
+    file_ext = (
+        file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else "jpg"
+    )
 
     if content_type in ["image/heic", "image/heif"] or file_ext in ["heic", "heif"]:
         from io import BytesIO
@@ -333,6 +349,7 @@ async def upload_photo(
         try:
             # pillow-heif is registered in openrouter service
             import pillow_heif
+
             pillow_heif.register_heif_opener()
         except ImportError:
             pass

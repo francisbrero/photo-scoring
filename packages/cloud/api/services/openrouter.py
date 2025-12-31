@@ -479,9 +479,7 @@ class OpenRouterService:
             + attr_values["visual_appeal"]
         ) / 3
         tech_avg = (
-            attr_values["sharpness"]
-            + attr_values["exposure_balance"]
-            + attr_values["noise_level"]
+            attr_values["sharpness"] + attr_values["exposure_balance"] + attr_values["noise_level"]
         ) / 3
 
         if tech_avg - aes_avg > 0.15:
