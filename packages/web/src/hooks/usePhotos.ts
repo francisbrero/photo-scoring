@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Photo } from '../types/photo';
+import { apiFetch } from '../lib/api';
 
 interface UsePhotosResult {
   photos: Photo[];
@@ -24,7 +25,7 @@ export function usePhotos(): UsePhotosResult {
           return;
         }
 
-        const response = await fetch('/api/photos');
+        const response = await apiFetch('/api/photos');
         if (!response.ok) {
           throw new Error(`Failed to fetch photos: ${response.statusText}`);
         }

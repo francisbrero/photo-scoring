@@ -33,7 +33,7 @@ TINY_JPEG = base64.b64encode(
 def test_analyze_requires_auth(client):
     """Test that inference/analyze requires authentication."""
     response = client.post(
-        "/inference/analyze",
+        "/api/inference/analyze",
         json={"image_data": TINY_JPEG},
     )
     assert response.status_code == 401
@@ -42,7 +42,7 @@ def test_analyze_requires_auth(client):
 def test_metadata_requires_auth(client):
     """Test that inference/metadata requires authentication."""
     response = client.post(
-        "/inference/metadata",
+        "/api/inference/metadata",
         json={"image_data": TINY_JPEG},
     )
     assert response.status_code == 401
@@ -51,7 +51,7 @@ def test_metadata_requires_auth(client):
 def test_analyze_invalid_base64(client, auth_token):
     """Test that invalid base64 returns 400."""
     response = client.post(
-        "/inference/analyze",
+        "/api/inference/analyze",
         json={"image_data": "not-valid-base64!!!"},
         headers={"Authorization": f"Bearer {auth_token}"},
     )

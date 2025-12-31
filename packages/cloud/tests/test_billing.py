@@ -26,7 +26,7 @@ def client(monkeypatch):
 
 def test_get_plans(client):
     """Test listing available credit plans."""
-    response = client.get("/billing/plans")
+    response = client.get("/api/billing/plans")
     assert response.status_code == 200
 
     plans = response.json()
@@ -48,20 +48,20 @@ def test_get_plans(client):
 
 def test_get_balance_requires_auth(client):
     """Test that balance endpoint requires authentication."""
-    response = client.get("/billing/balance")
+    response = client.get("/api/billing/balance")
     assert response.status_code == 401  # No auth header - returns 401 Unauthorized
 
 
 def test_get_transactions_requires_auth(client):
     """Test that transactions endpoint requires authentication."""
-    response = client.get("/billing/transactions")
+    response = client.get("/api/billing/transactions")
     assert response.status_code == 401  # No auth header - returns 401 Unauthorized
 
 
 def test_checkout_requires_auth(client):
     """Test that checkout endpoint requires authentication."""
     response = client.post(
-        "/billing/checkout",
+        "/api/billing/checkout",
         json={
             "plan_id": "credits_100",
             "success_url": "https://example.com/success",
@@ -73,7 +73,7 @@ def test_checkout_requires_auth(client):
 
 def test_webhook_requires_signature(client):
     """Test that webhook endpoint requires Stripe signature."""
-    response = client.post("/billing/webhook", content=b"{}")
+    response = client.post("/api/billing/webhook", content=b"{}")
     assert response.status_code == 400
     assert "Missing Stripe-Signature" in response.json()["detail"]
 
@@ -81,7 +81,7 @@ def test_webhook_requires_signature(client):
 def test_webhook_rejects_invalid_signature(client):
     """Test that webhook rejects invalid signatures."""
     response = client.post(
-        "/billing/webhook",
+        "/api/billing/webhook",
         content=b'{"type": "test"}',
         headers={"Stripe-Signature": "t=123,v1=invalid"},
     )
