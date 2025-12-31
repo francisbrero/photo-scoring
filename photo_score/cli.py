@@ -1,7 +1,6 @@
 """CLI for photo scoring."""
 
 import logging
-import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -99,7 +98,9 @@ def run(
 
     # Check output file
     if output_file.exists() and not overwrite:
-        typer.echo(f"Error: Output file {output_file} exists. Use --overwrite to replace.")
+        typer.echo(
+            f"Error: Output file {output_file} exists. Use --overwrite to replace."
+        )
         raise typer.Exit(code=1)
 
     # Load configuration
@@ -182,7 +183,9 @@ def run(
                             location_name = vision_meta.location_name
                             location_country = vision_meta.location_country
                         except OpenRouterError as e:
-                            logger.warning(f"Failed to get metadata for {image.filename}: {e}")
+                            logger.warning(
+                                f"Failed to get metadata for {image.filename}: {e}"
+                            )
                             description = None
                             location_name = None
                             location_country = None
@@ -295,7 +298,9 @@ def rescore(
 
     # Check output file
     if output_file.exists() and not overwrite:
-        typer.echo(f"Error: Output file {output_file} exists. Use --overwrite to replace.")
+        typer.echo(
+            f"Error: Output file {output_file} exists. Use --overwrite to replace."
+        )
         raise typer.Exit(code=1)
 
     # Load configuration
@@ -412,7 +417,6 @@ def calibrate(
     from photo_score.scoring.composite import CompositeScorer
 
     setup_logging(verbose)
-    logger = logging.getLogger(__name__)
 
     # Discover images
     typer.echo(f"Scanning {input_dir} for images...")
@@ -425,7 +429,9 @@ def calibrate(
         raise typer.Exit(code=0)
 
     typer.echo(f"Found {len(images)} images for calibration.")
-    typer.echo(f"Each image requires 8 API calls (feature extraction + 3 aesthetic + 3 technical + metadata)")
+    typer.echo(
+        "Each image requires 8 API calls (feature extraction + 3 aesthetic + 3 technical + metadata)"
+    )
     typer.echo(f"Total API calls: {len(images) * 8}\n")
 
     scorer = CompositeScorer()
@@ -433,19 +439,26 @@ def calibrate(
 
     try:
         for i, image in enumerate(images):
-            typer.echo(f"\n[{i+1}/{len(images)}] Processing {image.filename}...")
+            typer.echo(f"\n[{i + 1}/{len(images)}] Processing {image.filename}...")
 
             result = scorer.score_image(image.file_path, include_features=True)
             results.append(result)
 
             # Print summary
             typer.echo(f"  Final Score: {result.final_score:.1f}/100")
-            typer.echo(f"  Aesthetic: {result.aesthetic_score:.3f} | Technical: {result.technical_score:.3f}")
-            typer.echo(f"  Scene: {result.features.scene_type} | Lighting: {result.features.lighting}")
+            typer.echo(
+                f"  Aesthetic: {result.aesthetic_score:.3f} | Technical: {result.technical_score:.3f}"
+            )
+            typer.echo(
+                f"  Scene: {result.features.scene_type} | Lighting: {result.features.lighting}"
+            )
 
             # Show model agreement
-            aes_scores = [f"{s.model_id.split('/')[-1][:8]}={((s.composition+s.subject_strength+s.visual_appeal)/3):.2f}"
-                          for s in result.aesthetic_scores if s.success]
+            aes_scores = [
+                f"{s.model_id.split('/')[-1][:8]}={((s.composition + s.subject_strength + s.visual_appeal) / 3):.2f}"
+                for s in result.aesthetic_scores
+                if s.success
+            ]
             typer.echo(f"  Model scores: {', '.join(aes_scores)}")
 
     except KeyboardInterrupt:
@@ -457,53 +470,86 @@ def calibrate(
     if results:
         with open(output_file, "w", newline="", encoding="utf-8") as f:
             fieldnames = [
-                "image_path", "final_score", "aesthetic_score", "technical_score",
-                "composition", "subject_strength", "visual_appeal",
-                "sharpness", "exposure", "noise_level",
-                "scene_type", "lighting", "subject_position",
-                "description", "location_name", "location_country",
-                "qwen_aesthetic", "gpt4o_aesthetic", "gemini_aesthetic",
+                "image_path",
+                "final_score",
+                "aesthetic_score",
+                "technical_score",
+                "composition",
+                "subject_strength",
+                "visual_appeal",
+                "sharpness",
+                "exposure",
+                "noise_level",
+                "scene_type",
+                "lighting",
+                "subject_position",
+                "description",
+                "location_name",
+                "location_country",
+                "qwen_aesthetic",
+                "gpt4o_aesthetic",
+                "gemini_aesthetic",
                 "features_json",
             ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
 
             for r in results:
-                qwen = next((s for s in r.aesthetic_scores if "qwen" in s.model_id), None)
+                qwen = next(
+                    (s for s in r.aesthetic_scores if "qwen" in s.model_id), None
+                )
                 gpt = next((s for s in r.aesthetic_scores if "gpt" in s.model_id), None)
-                gem = next((s for s in r.aesthetic_scores if "gemini" in s.model_id), None)
+                gem = next(
+                    (s for s in r.aesthetic_scores if "gemini" in s.model_id), None
+                )
 
-                writer.writerow({
-                    "image_path": r.image_path,
-                    "final_score": round(r.final_score, 2),
-                    "aesthetic_score": round(r.aesthetic_score, 3),
-                    "technical_score": round(r.technical_score, 3),
-                    "composition": round(r.composition, 3),
-                    "subject_strength": round(r.subject_strength, 3),
-                    "visual_appeal": round(r.visual_appeal, 3),
-                    "sharpness": round(r.sharpness, 3),
-                    "exposure": round(r.exposure, 3),
-                    "noise_level": round(r.noise_level, 3),
-                    "scene_type": r.features.scene_type,
-                    "lighting": r.features.lighting,
-                    "subject_position": r.features.subject_position,
-                    "description": r.description,
-                    "location_name": r.location_name,
-                    "location_country": r.location_country,
-                    "qwen_aesthetic": f"{qwen.composition:.2f}/{qwen.subject_strength:.2f}/{qwen.visual_appeal:.2f}" if qwen and qwen.success else "",
-                    "gpt4o_aesthetic": f"{gpt.composition:.2f}/{gpt.subject_strength:.2f}/{gpt.visual_appeal:.2f}" if gpt and gpt.success else "",
-                    "gemini_aesthetic": f"{gem.composition:.2f}/{gem.subject_strength:.2f}/{gem.visual_appeal:.2f}" if gem and gem.success else "",
-                    "features_json": json.dumps(r.features.raw),
-                })
+                writer.writerow(
+                    {
+                        "image_path": r.image_path,
+                        "final_score": round(r.final_score, 2),
+                        "aesthetic_score": round(r.aesthetic_score, 3),
+                        "technical_score": round(r.technical_score, 3),
+                        "composition": round(r.composition, 3),
+                        "subject_strength": round(r.subject_strength, 3),
+                        "visual_appeal": round(r.visual_appeal, 3),
+                        "sharpness": round(r.sharpness, 3),
+                        "exposure": round(r.exposure, 3),
+                        "noise_level": round(r.noise_level, 3),
+                        "scene_type": r.features.scene_type,
+                        "lighting": r.features.lighting,
+                        "subject_position": r.features.subject_position,
+                        "description": r.description,
+                        "location_name": r.location_name,
+                        "location_country": r.location_country,
+                        "qwen_aesthetic": f"{qwen.composition:.2f}/{qwen.subject_strength:.2f}/{qwen.visual_appeal:.2f}"
+                        if qwen and qwen.success
+                        else "",
+                        "gpt4o_aesthetic": f"{gpt.composition:.2f}/{gpt.subject_strength:.2f}/{gpt.visual_appeal:.2f}"
+                        if gpt and gpt.success
+                        else "",
+                        "gemini_aesthetic": f"{gem.composition:.2f}/{gem.subject_strength:.2f}/{gem.visual_appeal:.2f}"
+                        if gem and gem.success
+                        else "",
+                        "features_json": json.dumps(r.features.raw),
+                    }
+                )
 
         typer.echo(f"\nResults saved to {output_file}")
 
         # Summary statistics
         scores = [r.final_score for r in results]
-        typer.echo(f"\nScore Distribution:")
-        typer.echo(f"  Min: {min(scores):.1f} | Max: {max(scores):.1f} | Avg: {sum(scores)/len(scores):.1f}")
+        typer.echo("\nScore Distribution:")
+        typer.echo(
+            f"  Min: {min(scores):.1f} | Max: {max(scores):.1f} | Avg: {sum(scores) / len(scores):.1f}"
+        )
 
-        bins = [(0, 30, "Flawed"), (30, 50, "Tourist"), (50, 70, "Competent"), (70, 85, "Strong"), (85, 100, "Excellent")]
+        bins = [
+            (0, 30, "Flawed"),
+            (30, 50, "Tourist"),
+            (50, 70, "Competent"),
+            (70, 85, "Strong"),
+            (85, 100, "Excellent"),
+        ]
         for low, high, label in bins:
             count = sum(1 for s in scores if low <= s < high)
             if count:
@@ -581,7 +627,9 @@ def benchmark(
         typer.echo(f"{'Key':<20} {'Name':<25} {'Input $/M':<12} {'Output $/M':<12}")
         typer.echo("-" * 70)
         for key, config in VISION_MODELS.items():
-            typer.echo(f"{key:<20} {config.name:<25} ${config.input_cost_per_m:<11.3f} ${config.output_cost_per_m:<11.3f}")
+            typer.echo(
+                f"{key:<20} {config.name:<25} ${config.input_cost_per_m:<11.3f} ${config.output_cost_per_m:<11.3f}"
+            )
         typer.echo(f"\nDefault models: {', '.join(DEFAULT_BENCHMARK_MODELS)}")
         return
 

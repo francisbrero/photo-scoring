@@ -35,7 +35,10 @@ def _extract_gps_info(exif: dict[str, Any]) -> dict[str, Any] | None:
         gps_data[tag_name] = value
 
     # Check for required fields
-    if not all(k in gps_data for k in ["GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef"]):
+    if not all(
+        k in gps_data
+        for k in ["GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef"]
+    ):
         return None
 
     try:
@@ -66,8 +69,8 @@ def extract_exif(file_path: Path) -> dict[str, Any] | None:
     """
     try:
         with Image.open(file_path) as img:
-            exif_data = img._getexif()
-            if exif_data is None:
+            exif_data = img.getexif()
+            if not exif_data:
                 return None
 
             # Build a tag name -> value mapping

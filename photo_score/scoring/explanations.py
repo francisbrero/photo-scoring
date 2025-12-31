@@ -86,8 +86,14 @@ class ExplanationGenerator:
                 parts.append(f"{weak_name.capitalize()} is mediocre.")
 
         # Aesthetic vs technical gap insight
-        aes_avg = (attributes.composition + attributes.subject_strength + attributes.visual_appeal) / 3
-        tech_avg = (attributes.sharpness + attributes.exposure_balance + attributes.noise_level) / 3
+        aes_avg = (
+            attributes.composition
+            + attributes.subject_strength
+            + attributes.visual_appeal
+        ) / 3
+        tech_avg = (
+            attributes.sharpness + attributes.exposure_balance + attributes.noise_level
+        ) / 3
 
         if tech_avg - aes_avg > 0.15:
             parts.append("Technically fine but aesthetically weak.")

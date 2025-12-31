@@ -1,8 +1,13 @@
-"""Vision model prompts for multi-model scoring system.
+"""Vision model prompts for multi-model composite scoring system.
 
-This module contains prompts optimized for different models:
-- FEATURE_EXTRACTION: Rich feature extraction using Pixtral (cheap, detailed)
-- SCORING prompts: Calibrated scoring prompts for different models
+This module contains prompts used by the CompositeScorer for multi-model scoring:
+- FEATURE_EXTRACTION_PROMPT: Rich feature extraction using Pixtral (cheap, detailed)
+- AESTHETIC_SCORING_PROMPT: Calibrated aesthetic scoring for multiple models
+- TECHNICAL_SCORING_PROMPT: Calibrated technical scoring for multiple models
+- METADATA_PROMPT: Description and location extraction
+- CRITIQUE_PROMPT: Educational photography critique
+
+For single-model scoring prompts (used by OpenRouterClient), see prompts.py.
 """
 
 # =============================================================================

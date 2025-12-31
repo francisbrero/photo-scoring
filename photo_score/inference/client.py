@@ -16,12 +16,21 @@ from pydantic import ValidationError
 # Register HEIC/HEIF support
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
 except ImportError:
     pass  # pillow-heif not installed, HEIC files won't work
 
-from photo_score.inference.prompts import AESTHETIC_PROMPT, TECHNICAL_PROMPT, METADATA_PROMPT
-from photo_score.inference.schemas import AestheticResponse, TechnicalResponse, MetadataResponse
+from photo_score.inference.prompts import (
+    AESTHETIC_PROMPT,
+    TECHNICAL_PROMPT,
+    METADATA_PROMPT,
+)
+from photo_score.inference.schemas import (
+    AestheticResponse,
+    TechnicalResponse,
+    MetadataResponse,
+)
 from photo_score.storage.models import NormalizedAttributes
 
 logger = logging.getLogger(__name__)
@@ -33,7 +42,9 @@ MAX_IMAGE_DIMENSION = 2048
 # Scoring requires nuanced judgment - use higher quality model
 MODEL_SCORING = "anthropic/claude-3.5-sonnet"  # $3/M input, $15/M output
 # Metadata is simpler (description + location) - use cheaper model
-MODEL_METADATA = "anthropic/claude-3-haiku"    # $0.25/M input, $1.25/M output (12x cheaper)
+MODEL_METADATA = (
+    "anthropic/claude-3-haiku"  # $0.25/M input, $1.25/M output (12x cheaper)
+)
 
 
 class OpenRouterError(Exception):
@@ -92,7 +103,7 @@ class OpenRouterClient:
 
             return base64_data, "image/jpeg"
 
-    def _call_api(
+    def call_api(
         self,
         image_path: Path,
         prompt: str,
@@ -100,6 +111,9 @@ class OpenRouterClient:
         max_tokens: int = 256,
     ) -> dict:
         """Make API call with image and prompt.
+
+        This is the primary method for making vision model API calls.
+        Used by both internal methods and external modules (composite scorer, benchmark).
 
         Args:
             image_path: Path to image file.
@@ -146,7 +160,11 @@ class OpenRouterClient:
                 response = self.client.post(
                     OPENROUTER_API_URL, json=payload, headers=headers
                 )
-            except (httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+            except (
+                httpx.TimeoutException,
+                httpx.RemoteProtocolError,
+                httpx.ConnectError,
+            ) as e:
                 wait_time = 2 ** (attempt + 1)
                 logger.warning(
                     f"Network error on attempt {attempt + 1}, waiting {wait_time}s before retry: {e}"
@@ -175,7 +193,9 @@ class OpenRouterClient:
 
         # Extract JSON from response (handle markdown code blocks and nested structures)
         # First try to extract from markdown code block
-        code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        code_block_match = re.search(
+            r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
+        )
         if code_block_match:
             try:
                 return json.loads(code_block_match.group(1))
@@ -208,7 +228,7 @@ class OpenRouterClient:
 
     def analyze_aesthetic(self, image_path: Path) -> AestheticResponse:
         """Analyze aesthetic qualities of an image."""
-        result = self._call_api(image_path, AESTHETIC_PROMPT)
+        result = self.call_api(image_path, AESTHETIC_PROMPT)
         try:
             return AestheticResponse.model_validate(result)
         except ValidationError as e:
@@ -216,7 +236,7 @@ class OpenRouterClient:
 
     def analyze_technical(self, image_path: Path) -> TechnicalResponse:
         """Analyze technical qualities of an image."""
-        result = self._call_api(image_path, TECHNICAL_PROMPT)
+        result = self.call_api(image_path, TECHNICAL_PROMPT)
         try:
             return TechnicalResponse.model_validate(result)
         except ValidationError as e:
@@ -228,7 +248,7 @@ class OpenRouterClient:
         Uses a cheaper model (Claude 3 Haiku) since this task is simpler
         than nuanced photo scoring.
         """
-        result = self._call_api(image_path, METADATA_PROMPT, model=MODEL_METADATA)
+        result = self.call_api(image_path, METADATA_PROMPT, model=MODEL_METADATA)
         try:
             return MetadataResponse.model_validate(result)
         except ValidationError as e:

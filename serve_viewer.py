@@ -3,7 +3,7 @@
 
 import http.server
 import json
-import os
+import logging
 import socketserver
 import webbrowser
 from io import BytesIO
@@ -12,12 +12,15 @@ from urllib.parse import urlparse
 
 from PIL import Image, ImageOps
 
+logger = logging.getLogger(__name__)
+
 # Register HEIC support
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
 except ImportError:
-    print("Warning: pillow-heif not installed, HEIC files won't work")
+    logger.warning("pillow-heif not installed, HEIC files won't work")
 
 PORT = 8080
 PHOTOS_DIR = "test_photos"
@@ -622,18 +625,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def parse_csv(filepath):
-    """Parse CSV file into list of dicts."""
+def parse_csv(filepath: str | Path) -> list[dict]:
+    """Parse CSV file into list of dicts.
+
+    Args:
+        filepath: Path to the CSV file.
+
+    Returns:
+        List of dictionaries with numeric fields converted to floats.
+    """
     import csv
 
-    photos = []
+    photos: list[dict] = []
     with open(filepath, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             # Convert numeric fields
-            for key in ["final_score", "aesthetic_score", "technical_score",
-                       "composition", "subject_strength", "visual_appeal",
-                       "sharpness", "exposure", "noise_level"]:
+            for key in [
+                "final_score",
+                "aesthetic_score",
+                "technical_score",
+                "composition",
+                "subject_strength",
+                "visual_appeal",
+                "sharpness",
+                "exposure",
+                "noise_level",
+            ]:
                 if key in row and row[key]:
                     try:
                         row[key] = float(row[key])
@@ -644,7 +662,14 @@ def parse_csv(filepath):
 
 
 def convert_image_to_jpeg(filepath: Path) -> bytes:
-    """Convert any image to JPEG bytes for browser display."""
+    """Convert any image to JPEG bytes for browser display.
+
+    Args:
+        filepath: Path to the image file.
+
+    Returns:
+        JPEG-encoded bytes suitable for browser display.
+    """
     if str(filepath) in image_cache:
         return image_cache[str(filepath)]
 
@@ -673,7 +698,9 @@ def convert_image_to_jpeg(filepath: Path) -> bytes:
 
 
 class PhotoHandler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
+    """HTTP request handler for the photo viewer."""
+
+    def do_GET(self) -> None:
         parsed = urlparse(self.path)
 
         if parsed.path == "/" or parsed.path == "/index.html":
@@ -690,8 +717,20 @@ class PhotoHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/photos/"):
             # Serve photo files (converted to JPEG)
             from urllib.parse import unquote
+
             filename = unquote(parsed.path[8:])  # Remove "/photos/" and decode
             filepath = Path(PHOTOS_DIR) / filename
+
+            # Security: Prevent path traversal attacks
+            try:
+                resolved_path = filepath.resolve()
+                photos_dir_resolved = Path(PHOTOS_DIR).resolve()
+                if not resolved_path.is_relative_to(photos_dir_resolved):
+                    self.send_error(403, "Access denied: path traversal attempt")
+                    return
+            except (ValueError, RuntimeError):
+                self.send_error(400, "Invalid path")
+                return
 
             if filepath.exists():
                 try:
@@ -704,26 +743,39 @@ class PhotoHandler(http.server.SimpleHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(jpeg_data)
                 except Exception as e:
-                    print(f"Error converting {filepath}: {e}")
+                    logger.error(f"Error converting {filepath}: {e}")
                     self.send_error(500, f"Error converting image: {e}")
             else:
                 self.send_error(404, f"File not found: {filename}")
         else:
             super().do_GET()
 
-    def log_message(self, format, *args):
-        # Only log errors, not every request
+    def log_message(self, format: str, *args) -> None:
+        """Log HTTP messages, filtering to only log errors."""
         if "404" in str(args) or "500" in str(args):
-            print(f"[{self.log_date_time_string()}] {args[0]}")
+            logger.warning(f"{args[0]}")
 
 
-def main():
+def main() -> None:
+    """Start the photo score viewer server."""
     global PHOTOS_DIR, CSV_FILE
 
     import argparse
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     parser = argparse.ArgumentParser(description="Photo Score Viewer Server")
-    parser.add_argument("-p", "--photos", default="test_photos", help="Photos directory")
-    parser.add_argument("-c", "--csv", default="test_photos_results.csv", help="CSV results file")
+    parser.add_argument(
+        "-p", "--photos", default="test_photos", help="Photos directory"
+    )
+    parser.add_argument(
+        "-c", "--csv", default="test_photos_results.csv", help="CSV results file"
+    )
     parser.add_argument("--port", type=int, default=8080, help="Server port")
     args = parser.parse_args()
 
@@ -731,32 +783,32 @@ def main():
     CSV_FILE = args.csv
 
     if not Path(CSV_FILE).exists():
-        print(f"Error: CSV file not found: {CSV_FILE}")
+        logger.error(f"CSV file not found: {CSV_FILE}")
         return
 
     if not Path(PHOTOS_DIR).exists():
-        print(f"Warning: Photos directory not found: {PHOTOS_DIR}")
+        logger.warning(f"Photos directory not found: {PHOTOS_DIR}")
 
     # Allow socket reuse
     socketserver.TCPServer.allow_reuse_address = True
 
     with socketserver.TCPServer(("", args.port), PhotoHandler) as httpd:
         url = f"http://localhost:{args.port}"
-        print(f"\n{'='*50}")
-        print(f"Photo Score Viewer")
-        print(f"{'='*50}")
-        print(f"URL:     {url}")
-        print(f"Photos:  {PHOTOS_DIR}")
-        print(f"CSV:     {CSV_FILE}")
-        print(f"{'='*50}")
-        print("Press Ctrl+C to stop\n")
+        logger.info("=" * 50)
+        logger.info("Photo Score Viewer")
+        logger.info("=" * 50)
+        logger.info(f"URL:     {url}")
+        logger.info(f"Photos:  {PHOTOS_DIR}")
+        logger.info(f"CSV:     {CSV_FILE}")
+        logger.info("=" * 50)
+        logger.info("Press Ctrl+C to stop")
 
         webbrowser.open(url)
 
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nShutting down...")
+            logger.info("Shutting down...")
 
 
 if __name__ == "__main__":
