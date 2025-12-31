@@ -1,43 +1,29 @@
 {
-  "hooks": {
-    "preCommit": [
-      {
-        "command": "uv run ruff format .",
-        "description": "Format code with ruff before commit"
-      },
-      {
-        "command": "uv run ruff check --fix .",
-        "description": "Fix linting issues before commit"
-      }
+  "permissions": {
+    "allow": [
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)"
     ],
-    "postCommit": [],
-    "prePush": [
-      {
-        "command": "uv run pytest -x -q",
-        "description": "Run tests before push (stop on first failure)"
-      }
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)"
     ]
   },
-  "commands": {
-    "score": {
-      "command": "uv run python calibrate.py -i $1 -o results.csv",
-      "description": "Score photos in a directory"
-    },
-    "viewer": {
-      "command": "uv run python serve_viewer.py --photos $1 --csv ${2:-results.csv}",
-      "description": "Start web viewer for photos"
-    },
-    "test": {
-      "command": "uv run pytest --cov=photo_score -v",
-      "description": "Run tests with coverage"
-    },
-    "lint": {
-      "command": "uv run ruff check . && uv run ruff format --check .",
-      "description": "Check code style"
-    },
-    "fix": {
-      "command": "uv run ruff check --fix . && uv run ruff format .",
-      "description": "Auto-fix code style issues"
-    }
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run ruff format . 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }
