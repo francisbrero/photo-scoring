@@ -157,9 +157,23 @@ async def get_photo(
     row = result.data[0]
     model_scores = row.get("model_scores") or {}
 
+    # Generate signed URL for the image (valid for 1 hour)
+    image_url = None
+    storage_path = row.get("storage_path")
+    if storage_path:
+        try:
+            signed_url_response = supabase.storage.from_("photos").create_signed_url(
+                storage_path, expires_in=3600
+            )
+            if signed_url_response and "signedURL" in signed_url_response:
+                image_url = signed_url_response["signedURL"]
+        except Exception:
+            pass  # Skip if signed URL generation fails
+
     return PhotoResponse(
         id=row["id"],
         image_path=row["storage_path"],
+        image_url=image_url,
         final_score=row.get("final_score"),
         aesthetic_score=row.get("aesthetic_score"),
         technical_score=row.get("technical_score"),
@@ -324,15 +338,19 @@ async def upload_photo(
 
     # Convert HEIC/HEIF to JPEG for browser compatibility
     content_type = file.content_type
-    file_ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else "jpg"
+    file_ext = (
+        file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else "jpg"
+    )
 
     if content_type in ["image/heic", "image/heif"] or file_ext in ["heic", "heif"]:
         from io import BytesIO
+
         from PIL import Image, ImageOps
 
         try:
             # pillow-heif is registered in openrouter service
             import pillow_heif
+
             pillow_heif.register_heif_opener()
         except ImportError:
             pass
@@ -476,7 +494,7 @@ async def score_photo(
     # Compute image hash for caching
     image_hash = hashlib.sha256(image_data).hexdigest()
 
-    # Check if we have cached inference results
+    # Check caches for inference results and features
     cache_result = (
         supabase.table("inference_cache")
         .select("attributes")
@@ -485,11 +503,20 @@ async def score_photo(
         .execute()
     )
 
+    features_cache = (
+        supabase.table("features_cache")
+        .select("features")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
     credit_service = CreditService(supabase)
     inference_service = OpenRouterService()
-    cached = bool(cache_result.data)
+    cached_attributes = bool(cache_result.data)
+    cached_features = bool(features_cache.data)
 
-    if cached:
+    if cached_attributes:
         # Use cached attributes (free)
         attributes = cache_result.data[0]["attributes"]
         new_balance = await credit_service.get_balance(user.id)
@@ -528,12 +555,50 @@ async def score_photo(
         except Exception:
             pass  # Don't fail if caching fails
 
+    # Extract features (for rich critique context)
+    if cached_features:
+        features = features_cache.data[0]["features"]
+    else:
+        try:
+            features = await inference_service.extract_features(image_data)
+            # Cache features
+            try:
+                supabase.table("features_cache").insert(
+                    {
+                        "user_id": user.id,
+                        "image_hash": image_hash,
+                        "features": features,
+                    }
+                ).execute()
+            except Exception:
+                pass
+        except InferenceError:
+            # Features extraction is optional, use defaults
+            features = {
+                "scene_type": "other",
+                "main_subject": "unclear",
+                "subject_position": "center",
+                "background": "unknown",
+                "lighting": "unknown",
+                "color_palette": "neutral",
+                "depth_of_field": "medium",
+                "time_of_day": "unknown",
+            }
+
     # Compute scores from attributes
     scores = inference_service.compute_scores(attributes)
 
-    # Generate explanation and improvements
-    explanation = inference_service.generate_explanation(attributes, scores["final_score"])
-    improvements = inference_service.generate_improvements(attributes)
+    # Generate rich critique with full context (features + scores)
+    try:
+        critique = await inference_service.generate_critique(
+            image_data, features, attributes, scores["final_score"]
+        )
+        explanation = inference_service.format_explanation(critique)
+        improvements = inference_service.format_improvements(critique)
+    except InferenceError:
+        # Fall back to simple explanation if critique fails
+        explanation = "Unable to generate detailed critique."
+        improvements = "No specific improvements available."
 
     # Get metadata (description, location) - try cache first
     metadata_cache = (
@@ -576,7 +641,7 @@ async def score_photo(
             # Metadata extraction is optional, don't fail the whole request
             pass
 
-    # Update photo with scores, metadata, explanation, and improvements
+    # Update photo with scores, metadata, explanation, improvements, and features
     supabase.table("scored_photos").update(
         {
             "final_score": scores["final_score"],
@@ -595,6 +660,7 @@ async def score_photo(
                 "exposure_balance": attributes.get("exposure_balance"),
                 "noise_level": attributes.get("noise_level"),
             },
+            "features_json": features,
             "updated_at": "now()",
         }
     ).eq("id", photo_id).execute()
@@ -617,8 +683,9 @@ async def regenerate_explanation(
 ):
     """Regenerate explanation and improvements for a scored photo.
 
-    This is a free operation that uses the existing model_scores
-    to generate critique and improvement suggestions.
+    This operation downloads the image and generates a new rich critique
+    using the existing scores and features. This is a free operation
+    (no credit deduction) but requires an API call for the critique.
     """
     # Get photo with existing scores
     result = (
@@ -637,6 +704,9 @@ async def regenerate_explanation(
 
     photo = result.data[0]
     model_scores = photo.get("model_scores") or {}
+    features = photo.get("features_json") or {}
+    storage_path = photo.get("storage_path")
+    final_score = photo.get("final_score") or 0
 
     if not model_scores:
         raise HTTPException(
@@ -644,18 +714,53 @@ async def regenerate_explanation(
             detail="Photo has no scores to regenerate from",
         )
 
-    # Generate explanation and improvements from existing scores
     inference_service = OpenRouterService()
-    final_score = photo.get("final_score") or 0
 
-    explanation = inference_service.generate_explanation(model_scores, final_score)
-    improvements = inference_service.generate_improvements(model_scores)
+    # Download image for rich critique generation
+    try:
+        download_result = supabase.storage.from_("photos").download(storage_path)
+        if isinstance(download_result, bytes):
+            image_data = download_result
+        elif hasattr(download_result, "read"):
+            image_data = download_result.read()
+        else:
+            image_data = bytes(download_result)
+
+        # If no features cached, extract them now
+        if not features:
+            try:
+                features = await inference_service.extract_features(image_data)
+            except InferenceError:
+                features = {
+                    "scene_type": "other",
+                    "main_subject": "unclear",
+                    "subject_position": "center",
+                    "background": "unknown",
+                    "lighting": "unknown",
+                    "color_palette": "neutral",
+                    "depth_of_field": "medium",
+                    "time_of_day": "unknown",
+                }
+
+        # Generate rich critique
+        critique = await inference_service.generate_critique(
+            image_data, features, model_scores, final_score
+        )
+        explanation = inference_service.format_explanation(critique)
+        improvements = inference_service.format_improvements(critique)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to regenerate critique: {str(e)}",
+        ) from e
 
     # Update the photo
     supabase.table("scored_photos").update(
         {
             "explanation": explanation,
             "improvements": improvements,
+            "features_json": features,
             "updated_at": "now()",
         }
     ).eq("id", photo_id).execute()
@@ -670,12 +775,16 @@ async def regenerate_all_explanations(
 ):
     """Regenerate explanation and improvements for all scored photos.
 
-    This is a free operation that uses existing model_scores.
+    This operation downloads each image and generates new rich critiques
+    using the existing scores and features. This is a free operation
+    (no credit deduction) but requires API calls for each critique.
+
+    Note: This can be slow for many photos due to API rate limits.
     """
     # Get all scored photos for user
     result = (
         supabase.table("scored_photos")
-        .select("id, final_score, model_scores")
+        .select("id, final_score, model_scores, features_json, storage_path")
         .eq("user_id", user.id)
         .not_.is_("final_score", "null")
         .execute()
@@ -686,26 +795,69 @@ async def regenerate_all_explanations(
 
     inference_service = OpenRouterService()
     updated = 0
+    failed = 0
 
     for photo in result.data:
         model_scores = photo.get("model_scores") or {}
         if not model_scores:
             continue
 
+        features = photo.get("features_json") or {}
+        storage_path = photo.get("storage_path")
         final_score = photo.get("final_score") or 0
-        explanation = inference_service.generate_explanation(model_scores, final_score)
-        improvements = inference_service.generate_improvements(model_scores)
 
-        supabase.table("scored_photos").update(
-            {
-                "explanation": explanation,
-                "improvements": improvements,
-                "updated_at": "now()",
-            }
-        ).eq("id", photo["id"]).execute()
-        updated += 1
+        try:
+            # Download image for rich critique generation
+            download_result = supabase.storage.from_("photos").download(storage_path)
+            if isinstance(download_result, bytes):
+                image_data = download_result
+            elif hasattr(download_result, "read"):
+                image_data = download_result.read()
+            else:
+                image_data = bytes(download_result)
 
-    return {"message": f"Regenerated {updated} photos", "updated": updated}
+            # If no features cached, extract them now
+            if not features:
+                try:
+                    features = await inference_service.extract_features(image_data)
+                except InferenceError:
+                    features = {
+                        "scene_type": "other",
+                        "main_subject": "unclear",
+                        "subject_position": "center",
+                        "background": "unknown",
+                        "lighting": "unknown",
+                        "color_palette": "neutral",
+                        "depth_of_field": "medium",
+                        "time_of_day": "unknown",
+                    }
+
+            # Generate rich critique
+            critique = await inference_service.generate_critique(
+                image_data, features, model_scores, final_score
+            )
+            explanation = inference_service.format_explanation(critique)
+            improvements = inference_service.format_improvements(critique)
+
+            supabase.table("scored_photos").update(
+                {
+                    "explanation": explanation,
+                    "improvements": improvements,
+                    "features_json": features,
+                    "updated_at": "now()",
+                }
+            ).eq("id", photo["id"]).execute()
+            updated += 1
+
+        except Exception:
+            failed += 1
+            continue
+
+    message = f"Regenerated {updated} photos"
+    if failed > 0:
+        message += f" ({failed} failed)"
+
+    return {"message": message, "updated": updated, "failed": failed}
 
 
 @router.get("/serve/{path:path}")

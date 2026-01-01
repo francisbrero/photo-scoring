@@ -74,9 +74,58 @@ class TestFullUserJourney:
                 "location_country": "USA",
             }
 
+        async def mock_extract_features(self, image_data):
+            return {
+                "scene_type": "landscape",
+                "main_subject": "mountain range with dramatic sky",
+                "subject_position": "center",
+                "background": "clean",
+                "lighting": "golden_hour",
+                "color_palette": "warm",
+                "depth_of_field": "deep",
+                "motion": "static",
+                "human_presence": "none",
+                "text_or_signs": False,
+                "weather_visible": "clear",
+                "time_of_day": "golden_hour",
+                "technical_issues": [],
+                "notable_elements": ["dramatic clouds", "mountain peaks", "warm light"],
+                "estimated_location_type": "mountain",
+            }
+
+        async def mock_generate_critique(self, image_data, features, attributes, final_score):
+            return {
+                "summary": (
+                    "This landscape photograph captures a stunning mountain scene with excellent "
+                    "golden hour lighting. The composition effectively uses the rule of thirds, "
+                    "though the foreground could benefit from a stronger anchor element."
+                ),
+                "working_well": [
+                    "The golden hour lighting creates beautiful warm tones across the mountain "
+                    "peaks, adding depth and dimension to the scene.",
+                    "Strong technical execution with excellent sharpness throughout the frame "
+                    "and well-controlled exposure in the challenging lighting conditions.",
+                ],
+                "could_improve": [
+                    "The foreground lacks a compelling anchor element - consider including "
+                    "rocks, flowers, or leading lines to draw the viewer into the scene.",
+                    "The horizon is placed near the center; try positioning it on the upper "
+                    "or lower third for a more dynamic composition.",
+                ],
+                "key_recommendation": (
+                    "Return during different lighting conditions or find a foreground element "
+                    "like interesting rocks or wildflowers to create depth and lead the "
+                    "viewer's eye through the frame."
+                ),
+            }
+
         monkeypatch.setattr(openrouter.OpenRouterService, "analyze_image", mock_analyze_image)
         monkeypatch.setattr(
             openrouter.OpenRouterService, "analyze_image_metadata", mock_analyze_metadata
+        )
+        monkeypatch.setattr(openrouter.OpenRouterService, "extract_features", mock_extract_features)
+        monkeypatch.setattr(
+            openrouter.OpenRouterService, "generate_critique", mock_generate_critique
         )
 
     @pytest.fixture
@@ -344,13 +393,13 @@ class TestFullUserJourney:
             assert photo_data["explanation"] is not None
             assert photo_data["improvements"] is not None
 
-            # Verify individual attribute scores
-            assert photo_data["composition"] is not None
-            assert photo_data["subject_strength"] is not None
-            assert photo_data["visual_appeal"] is not None
-            assert photo_data["sharpness"] is not None
-            assert photo_data["exposure"] is not None
-            assert photo_data["noise_level"] is not None
+            # Verify features were extracted and stored
+            # Note: individual attribute scores are stored in model_scores JSONB,
+            # not exposed directly in the response. features_json contains scene context.
+            assert (
+                photo_data.get("features_json") is not None
+                or photo_data.get("scene_type") is not None
+            )
 
             # ============================================
             # Step 5: Regenerate explanation

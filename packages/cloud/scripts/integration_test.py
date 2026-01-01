@@ -19,11 +19,11 @@ import argparse
 import base64
 import os
 import sys
+from io import BytesIO
 from pathlib import Path
 
 import httpx
 from PIL import Image
-from io import BytesIO
 
 
 def create_test_image() -> bytes:
@@ -225,7 +225,7 @@ def main():
     api_url = args.api_url.rstrip("/")
 
     print(f"\n{'=' * 60}")
-    print(f"Integration Test for Photo Score API")
+    print("Integration Test for Photo Score API")
     print(f"API URL: {api_url}")
     print(f"{'=' * 60}")
 

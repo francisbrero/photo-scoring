@@ -189,34 +189,9 @@ class TestPhotoScoringIntegration:
     """
 
     def test_score_photo_deducts_credit(
-        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, monkeypatch
+        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, mock_openrouter
     ):
         """Scoring should deduct 1 credit."""
-        # Mock OpenRouter to avoid real API calls
-        from api.services import openrouter
-
-        async def mock_analyze_image(self, image_data, image_hash):
-            return {
-                "composition": 0.7,
-                "subject_strength": 0.8,
-                "visual_appeal": 0.75,
-                "sharpness": 0.9,
-                "exposure_balance": 0.85,
-                "noise_level": 0.1,
-            }
-
-        async def mock_analyze_metadata(self, image_data, image_hash):
-            return {
-                "description": "Test photo",
-                "location_name": None,
-                "location_country": None,
-            }
-
-        monkeypatch.setattr(openrouter.OpenRouterService, "analyze_image", mock_analyze_image)
-        monkeypatch.setattr(
-            openrouter.OpenRouterService, "analyze_image_metadata", mock_analyze_metadata
-        )
-
         # Trigger trial credits first
         integration_client.get("/api/auth/me", headers=auth_headers)
 
@@ -242,29 +217,9 @@ class TestPhotoScoringIntegration:
         assert data["credits_remaining"] == initial_credits - 1
 
     def test_score_photo_returns_scores(
-        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, monkeypatch
+        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, mock_openrouter
     ):
         """Scoring should return aesthetic and technical scores."""
-        from api.services import openrouter
-
-        async def mock_analyze_image(self, image_data, image_hash):
-            return {
-                "composition": 0.7,
-                "subject_strength": 0.8,
-                "visual_appeal": 0.75,
-                "sharpness": 0.9,
-                "exposure_balance": 0.85,
-                "noise_level": 0.1,
-            }
-
-        async def mock_analyze_metadata(self, image_data, image_hash):
-            return {"description": "Test photo"}
-
-        monkeypatch.setattr(openrouter.OpenRouterService, "analyze_image", mock_analyze_image)
-        monkeypatch.setattr(
-            openrouter.OpenRouterService, "analyze_image_metadata", mock_analyze_metadata
-        )
-
         # Trigger trial credits first
         integration_client.get("/api/auth/me", headers=auth_headers)
 
@@ -288,29 +243,9 @@ class TestPhotoScoringIntegration:
         assert 0 <= data["final_score"] <= 100
 
     def test_cannot_score_twice(
-        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, monkeypatch
+        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, mock_openrouter
     ):
         """Should not allow scoring the same photo twice."""
-        from api.services import openrouter
-
-        async def mock_analyze_image(self, image_data, image_hash):
-            return {
-                "composition": 0.7,
-                "subject_strength": 0.8,
-                "visual_appeal": 0.75,
-                "sharpness": 0.9,
-                "exposure_balance": 0.85,
-                "noise_level": 0.1,
-            }
-
-        async def mock_analyze_metadata(self, image_data, image_hash):
-            return {"description": "Test"}
-
-        monkeypatch.setattr(openrouter.OpenRouterService, "analyze_image", mock_analyze_image)
-        monkeypatch.setattr(
-            openrouter.OpenRouterService, "analyze_image_metadata", mock_analyze_metadata
-        )
-
         # Trigger trial credits first
         integration_client.get("/api/auth/me", headers=auth_headers)
 
@@ -333,6 +268,79 @@ class TestPhotoScoringIntegration:
         assert second_score.status_code == 400
         assert "already been scored" in second_score.json()["detail"]
 
+    def test_score_photo_generates_rich_critique(
+        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, mock_openrouter
+    ):
+        """Scoring should generate rich, contextual critique with structured sections."""
+        # Trigger trial credits first
+        integration_client.get("/api/auth/me", headers=auth_headers)
+
+        # Upload and score
+        upload_response = integration_client.post(
+            "/api/photos/upload",
+            headers=auth_headers,
+            files={"file": ("test.jpg", BytesIO(sample_jpeg_bytes), "image/jpeg")},
+        )
+        photo_id = upload_response.json()["id"]
+
+        score_response = integration_client.post(
+            f"/api/photos/{photo_id}/score", headers=auth_headers
+        )
+        assert score_response.status_code == 200
+
+        # Get full photo data with explanation
+        photo_response = integration_client.get(f"/api/photos/{photo_id}", headers=auth_headers)
+        assert photo_response.status_code == 200
+        photo_data = photo_response.json()
+
+        # Validate critique quality
+        explanation = photo_data.get("explanation", "")
+        improvements = photo_data.get("improvements", "")
+
+        # Must have substantial content (not template output)
+        assert len(explanation) > 100, "Explanation too short"
+        assert len(improvements) > 50, "Improvements too short"
+
+        # Must have structured sections
+        assert "**What's working:**" in explanation, "Missing 'What's working' section"
+        assert "**Could improve:**" in explanation, "Missing 'Could improve' section"
+
+        # Must NOT be template output (old format)
+        assert "Near-publishable" not in explanation, "Still using old template format"
+        assert "Tourist-level" not in explanation, "Still using old template format"
+
+        # Improvements should have key recommendation
+        assert "Key recommendation" in improvements, "Missing key recommendation"
+
+    def test_score_photo_stores_features(
+        self, integration_client, auth_headers, sample_jpeg_bytes, cleanup_storage, mock_openrouter
+    ):
+        """Scoring should extract and store scene features."""
+        # Trigger trial credits first
+        integration_client.get("/api/auth/me", headers=auth_headers)
+
+        # Upload and score
+        upload_response = integration_client.post(
+            "/api/photos/upload",
+            headers=auth_headers,
+            files={"file": ("test.jpg", BytesIO(sample_jpeg_bytes), "image/jpeg")},
+        )
+        photo_id = upload_response.json()["id"]
+
+        score_response = integration_client.post(
+            f"/api/photos/{photo_id}/score", headers=auth_headers
+        )
+        assert score_response.status_code == 200
+
+        # Get full photo data
+        photo_response = integration_client.get(f"/api/photos/{photo_id}", headers=auth_headers)
+        photo_data = photo_response.json()
+
+        # Should have features_json stored
+        features = photo_data.get("features_json")
+        # Note: features_json might be stringified, so we just check it's not empty
+        assert features is not None, "Features not stored"
+
     def test_insufficient_credits_rejected(
         self,
         integration_client,
@@ -341,7 +349,6 @@ class TestPhotoScoringIntegration:
         cleanup_storage,
         supabase_admin,
         test_user,
-        monkeypatch,
     ):
         """Should reject scoring when user has no credits."""
         # Set user credits to 0
@@ -373,31 +380,9 @@ class TestRegenerateIntegration:
         auth_headers,
         sample_jpeg_bytes,
         cleanup_storage,
-        supabase_admin,
-        test_user,
-        monkeypatch,
+        mock_openrouter,
     ):
         """Should regenerate explanation for scored photo."""
-        from api.services import openrouter
-
-        async def mock_analyze_image(self, image_data, image_hash):
-            return {
-                "composition": 0.7,
-                "subject_strength": 0.8,
-                "visual_appeal": 0.75,
-                "sharpness": 0.9,
-                "exposure_balance": 0.85,
-                "noise_level": 0.1,
-            }
-
-        async def mock_analyze_metadata(self, image_data, image_hash):
-            return {"description": "Test"}
-
-        monkeypatch.setattr(openrouter.OpenRouterService, "analyze_image", mock_analyze_image)
-        monkeypatch.setattr(
-            openrouter.OpenRouterService, "analyze_image_metadata", mock_analyze_metadata
-        )
-
         # Trigger trial credits first
         integration_client.get("/api/auth/me", headers=auth_headers)
 
@@ -421,9 +406,12 @@ class TestRegenerateIntegration:
         assert regen_response.status_code == 200
         assert "regenerated" in regen_response.json()["message"].lower()
 
-        # Verify photo has explanation
+        # Verify photo has rich explanation
         photo_response = integration_client.get(f"/api/photos/{photo_id}", headers=auth_headers)
         assert photo_response.status_code == 200
         photo_data = photo_response.json()
         assert photo_data["explanation"] is not None
         assert photo_data["improvements"] is not None
+        # Verify it's rich critique
+        assert len(photo_data["explanation"]) > 100
+        assert "**What's working:**" in photo_data["explanation"]

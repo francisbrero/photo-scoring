@@ -9,9 +9,7 @@ import hashlib
 import json
 import logging
 import re
-import tempfile
 from io import BytesIO
-from pathlib import Path
 
 import httpx
 from PIL import Image, ImageOps
@@ -101,6 +99,79 @@ Respond with ONLY a JSON object:
 }
 
 Be concise and factual. Focus on what's visible in the image. If the location cannot be determined from visible landmarks, signs, or distinctive features, use null for location fields."""
+
+# Feature extraction prompt (used for rich critique context)
+FEATURE_EXTRACTION_PROMPT = """Analyze this photograph and extract detailed features. Be objective and thorough.
+
+Respond with ONLY a JSON object:
+{
+  "scene_type": "<landscape|portrait|street|architecture|nature|food|event|other>",
+  "main_subject": "<brief description of the main subject>",
+  "subject_position": "<center|rule_of_thirds|off_center|multiple>",
+  "background": "<clean|busy|blurred|contextual>",
+  "lighting": "<natural_soft|natural_harsh|golden_hour|blue_hour|artificial|mixed|low_light>",
+  "color_palette": "<vibrant|muted|monochrome|warm|cool|neutral>",
+  "depth_of_field": "<shallow|medium|deep>",
+  "motion": "<static|implied|blur|frozen>",
+  "human_presence": "<none|main_subject|secondary|crowd>",
+  "text_or_signs": <true|false>,
+  "weather_visible": "<clear|cloudy|rain|fog|none>",
+  "time_of_day": "<dawn|morning|midday|afternoon|golden_hour|dusk|night|unknown>",
+  "technical_issues": ["<list any: blur, noise, overexposed, underexposed, tilted, none>"],
+  "notable_elements": ["<list 2-3 notable visual elements>"],
+  "estimated_location_type": "<urban|rural|coastal|mountain|indoor|tourist_site|unknown>"
+}
+
+Be factual. Report what you observe, not interpretations."""
+
+# Critique prompt template (filled with context before use)
+CRITIQUE_PROMPT_TEMPLATE = """You are a photography instructor reviewing this image to help the photographer improve deliberately.
+
+IMAGE CONTEXT:
+- Scene type: {scene_type}
+- Main subject: {main_subject}
+- Subject position: {subject_position}
+- Background: {background}
+- Lighting: {lighting}
+- Color palette: {color_palette}
+- Depth of field: {depth_of_field}
+- Time of day: {time_of_day}
+
+SCORES (0-1 scale):
+- Composition: {composition:.2f}
+- Subject strength: {subject_strength:.2f}
+- Visual appeal: {visual_appeal:.2f}
+- Sharpness: {sharpness:.2f}
+- Exposure: {exposure_balance:.2f}
+- Noise level: {noise_level:.2f} (1.0 = clean)
+- Final score: {final_score:.0f}/100
+
+Write a structured critique as a photography instructor. Be educational, specific, and constructive.
+
+Respond with ONLY a JSON object:
+{{
+  "summary": "<2-3 sentences: overall assessment of the image's strengths and main limitations>",
+  "working_well": [
+    "<specific strength 1 with explanation of WHY it works>",
+    "<specific strength 2 with explanation>"
+  ],
+  "could_improve": [
+    "<specific issue 1 with concrete suggestion for improvement>",
+    "<specific issue 2 with actionable advice>"
+  ],
+  "key_recommendation": "<single most impactful thing the photographer could do differently, either in capture or post-processing>"
+}}
+
+GUIDELINES:
+- Ground observations in what you SEE in the image, not generic advice
+- Explain WHY something works or doesn't work in this specific context
+- For improvements, give concrete suggestions (e.g., "lower the camera angle", "crop from the top", "return at golden hour")
+- Acknowledge what's working before critiquing weaknesses
+- Be educational, not snarky or dismissive
+- Consider scene type when evaluating (centered subjects work for some scenes)
+- For landscapes: consider light quality, depth layering, foreground interest
+- For portraits: consider expression, background separation, eye contact
+- For architecture: consider lines, symmetry, perspective"""
 
 
 class InferenceError(Exception):
@@ -357,6 +428,117 @@ class OpenRouterService:
                 f"Metadata inference failed: {error_msg}", retryable=retryable
             ) from e
 
+    async def extract_features(self, image_data: bytes) -> dict:
+        """Extract scene features from an image for rich critique context.
+
+        Uses a cheap model (Haiku) for cost efficiency.
+
+        Args:
+            image_data: Raw image bytes
+
+        Returns:
+            Dictionary with scene features:
+            - scene_type, main_subject, subject_position, background
+            - lighting, color_palette, depth_of_field, time_of_day
+            - human_presence, weather_visible, notable_elements, etc.
+
+        Raises:
+            InferenceError: If extraction fails
+        """
+        try:
+            features = await asyncio.to_thread(
+                self._call_api, image_data, FEATURE_EXTRACTION_PROMPT, MODEL_METADATA
+            )
+
+            # Ensure required fields have defaults
+            return {
+                "scene_type": features.get("scene_type", "other"),
+                "main_subject": features.get("main_subject", "unclear"),
+                "subject_position": features.get("subject_position", "center"),
+                "background": features.get("background", "unknown"),
+                "lighting": features.get("lighting", "unknown"),
+                "color_palette": features.get("color_palette", "neutral"),
+                "depth_of_field": features.get("depth_of_field", "medium"),
+                "motion": features.get("motion", "static"),
+                "human_presence": features.get("human_presence", "none"),
+                "text_or_signs": features.get("text_or_signs", False),
+                "weather_visible": features.get("weather_visible", "none"),
+                "time_of_day": features.get("time_of_day", "unknown"),
+                "technical_issues": features.get("technical_issues", []),
+                "notable_elements": features.get("notable_elements", []),
+                "estimated_location_type": features.get("estimated_location_type", "unknown"),
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            retryable = "rate limit" in error_msg.lower() or "timeout" in error_msg.lower()
+            raise InferenceError(
+                f"Feature extraction failed: {error_msg}", retryable=retryable
+            ) from e
+
+    async def generate_critique(
+        self,
+        image_data: bytes,
+        features: dict,
+        attributes: dict,
+        final_score: float,
+    ) -> dict:
+        """Generate a rich, contextual critique using features and scores.
+
+        Args:
+            image_data: Raw image bytes
+            features: Scene features from extract_features()
+            attributes: Normalized attributes from analyze_image()
+            final_score: Final computed score (0-100)
+
+        Returns:
+            Dictionary with:
+            - summary: str (2-3 sentence overall assessment)
+            - working_well: list[str] (specific strengths)
+            - could_improve: list[str] (specific suggestions)
+            - key_recommendation: str (single most impactful advice)
+
+        Raises:
+            InferenceError: If critique generation fails
+        """
+        # Build the prompt with context
+        prompt = CRITIQUE_PROMPT_TEMPLATE.format(
+            scene_type=features.get("scene_type", "unknown"),
+            main_subject=features.get("main_subject", "unclear"),
+            subject_position=features.get("subject_position", "unknown"),
+            background=features.get("background", "unknown"),
+            lighting=features.get("lighting", "unknown"),
+            color_palette=features.get("color_palette", "unknown"),
+            depth_of_field=features.get("depth_of_field", "unknown"),
+            time_of_day=features.get("time_of_day", "unknown"),
+            composition=attributes.get("composition", 0.5),
+            subject_strength=attributes.get("subject_strength", 0.5),
+            visual_appeal=attributes.get("visual_appeal", 0.5),
+            sharpness=attributes.get("sharpness", 0.5),
+            exposure_balance=attributes.get("exposure_balance", 0.5),
+            noise_level=attributes.get("noise_level", 0.5),
+            final_score=final_score,
+        )
+
+        try:
+            critique = await asyncio.to_thread(
+                self._call_api, image_data, prompt, MODEL_SCORING, max_tokens=1024
+            )
+
+            return {
+                "summary": critique.get("summary", ""),
+                "working_well": critique.get("working_well", []),
+                "could_improve": critique.get("could_improve", []),
+                "key_recommendation": critique.get("key_recommendation", ""),
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            retryable = "rate limit" in error_msg.lower() or "timeout" in error_msg.lower()
+            raise InferenceError(
+                f"Critique generation failed: {error_msg}", retryable=retryable
+            ) from e
+
     @staticmethod
     def compute_scores(attributes: dict) -> dict:
         """Compute aesthetic, technical, and final scores from attributes.
@@ -405,146 +587,55 @@ class OpenRouterService:
         }
 
     @staticmethod
-    def generate_explanation(attributes: dict, final_score: float) -> str:
-        """Generate a critique/explanation based on the scores.
+    def format_explanation(critique: dict) -> str:
+        """Format the critique into a readable explanation string.
 
         Args:
-            attributes: Dict with the 6 normalized attributes
-            final_score: Final computed score (0-100)
+            critique: Dict from generate_critique() with summary, working_well,
+                     could_improve, and key_recommendation
 
         Returns:
-            Human-readable explanation string
+            Formatted explanation string with structured sections
         """
-        attr_names = {
-            "composition": "composition",
-            "subject_strength": "subject clarity",
-            "visual_appeal": "visual appeal",
-            "sharpness": "sharpness",
-            "exposure_balance": "exposure",
-            "noise_level": "low noise",
-        }
-
-        attr_values = {
-            "composition": attributes.get("composition", 0.5),
-            "subject_strength": attributes.get("subject_strength", 0.5),
-            "visual_appeal": attributes.get("visual_appeal", 0.5),
-            "sharpness": attributes.get("sharpness", 0.5),
-            "exposure_balance": attributes.get("exposure_balance", 0.5),
-            "noise_level": attributes.get("noise_level", 0.5),
-        }
-
-        # Sort by value to find strengths and weaknesses
-        sorted_attrs = sorted(attr_values.items(), key=lambda x: x[1], reverse=True)
-
-        # Find strong attributes (>= 0.7) and weak ones (< 0.5)
-        strong = [(a, v) for a, v in sorted_attrs if v >= 0.7]
-        weak = [(a, v) for a, v in sorted_attrs if v < 0.5]
-
         parts = []
 
-        # Score tier description
-        if final_score >= 70:
-            tier = "**Near-publishable**"
-        elif final_score >= 55:
-            tier = "**Competent but unremarkable**"
-        elif final_score >= 40:
-            tier = "**Tourist-level**"
-        else:
-            tier = "**Flawed**"
+        if critique.get("summary"):
+            parts.append(critique["summary"])
 
-        # Build explanation
-        if strong:
-            strong_names = [attr_names[a] for a, _ in strong[:2]]
-            if len(strong_names) == 2:
-                parts.append(f"{tier}. Strong {strong_names[0]} and {strong_names[1]}.")
-            else:
-                parts.append(f"{tier}. Strong {strong_names[0]}.")
-        else:
-            parts.append(f"{tier}. No standout qualities.")
+        if critique.get("working_well"):
+            strengths = critique["working_well"][:2]  # Top 2 strengths
+            parts.append("**What's working:** " + " ".join(strengths))
 
-        # Weaknesses
-        if weak:
-            weak_sorted = sorted(weak, key=lambda x: x[1])
-            weakest = weak_sorted[0]
-            weak_name = attr_names[weakest[0]]
-            if weakest[1] < 0.35:
-                parts.append(f"Weak {weak_name} hurts the image.")
-            else:
-                parts.append(f"{weak_name.capitalize()} is mediocre.")
+        if critique.get("could_improve"):
+            improvements = critique["could_improve"][:2]  # Top 2 improvements
+            parts.append("**Could improve:** " + " ".join(improvements))
 
-        # Aesthetic vs technical gap insight
-        aes_avg = (
-            attr_values["composition"]
-            + attr_values["subject_strength"]
-            + attr_values["visual_appeal"]
-        ) / 3
-        tech_avg = (
-            attr_values["sharpness"]
-            + attr_values["exposure_balance"]
-            + attr_values["noise_level"]
-        ) / 3
-
-        if tech_avg - aes_avg > 0.15:
-            parts.append("Technically fine but aesthetically weak.")
-        elif aes_avg - tech_avg > 0.15:
-            parts.append("Good eye, execution could improve.")
-
-        return " ".join(parts)
+        return "\n\n".join(parts) if parts else "Unable to generate critique."
 
     @staticmethod
-    def generate_improvements(attributes: dict) -> str:
-        """Generate improvement suggestions based on weak attributes.
+    def format_improvements(critique: dict) -> str:
+        """Extract and format improvements from the critique.
 
         Args:
-            attributes: Dict with the 6 normalized attributes
+            critique: Dict from generate_critique()
 
         Returns:
-            Bullet-pointed improvement suggestions
+            Formatted improvement suggestions with key recommendation
         """
-        suggestions = []
+        improvements = []
 
-        comp = attributes.get("composition", 0.5)
-        subj = attributes.get("subject_strength", 0.5)
-        appeal = attributes.get("visual_appeal", 0.5)
-        sharp = attributes.get("sharpness", 0.5)
-        exp = attributes.get("exposure_balance", 0.5)
-        noise = attributes.get("noise_level", 0.5)
+        # Add specific improvement suggestions
+        if critique.get("could_improve"):
+            improvements.extend(critique["could_improve"][:2])
 
-        if comp < 0.5:
-            suggestions.append(
-                "**Composition**: Try the rule of thirds, lead the eye with lines, "
-                "or eliminate distracting elements from the frame."
-            )
-        if subj < 0.5:
-            suggestions.append(
-                "**Subject clarity**: Make your subject more prominent. "
-                "Use depth of field, contrast, or positioning to draw attention."
-            )
-        if appeal < 0.5:
-            suggestions.append(
-                "**Visual appeal**: Look for interesting light, decisive moments, "
-                "or unique perspectives that create emotional impact."
-            )
-        if sharp < 0.5:
-            suggestions.append(
-                "**Sharpness**: Use a faster shutter speed, stabilize your camera, "
-                "or ensure focus is on your subject."
-            )
-        if exp < 0.5:
-            suggestions.append(
-                "**Exposure**: Check histogram for clipping. "
-                "Consider bracketing or using exposure compensation."
-            )
-        if noise < 0.5:
-            suggestions.append(
-                "**Noise**: Lower your ISO, use better lighting, "
-                "or apply noise reduction in post-processing."
-            )
+        # Add key recommendation
+        if critique.get("key_recommendation"):
+            improvements.append(f"**Key recommendation:** {critique['key_recommendation']}")
 
-        if not suggestions:
-            return "This is a strong image. Minor refinements in post-processing could enhance it further."
+        if not improvements:
+            return "No specific improvements identified."
 
-        return "\n\n".join(suggestions)
+        return " | ".join(improvements)
 
     @staticmethod
     def compute_image_hash(image_data: bytes) -> str:
