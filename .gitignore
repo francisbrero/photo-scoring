@@ -65,3 +65,6 @@ photo_scores_corrected_*.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Supabase development
+supabase/
