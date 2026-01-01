@@ -164,6 +164,92 @@ class TestOpenRouterService:
         assert decoded == original
 
 
+class TestCritiqueFormatting:
+    """Tests for critique formatting methods."""
+
+    def test_format_explanation(self, monkeypatch):
+        """Test that format_explanation produces structured output."""
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
+        monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+        from api.services.openrouter import OpenRouterService
+
+        critique = {
+            "summary": "This is a well-composed landscape shot with good lighting.",
+            "working_well": [
+                "Strong composition with rule of thirds placement.",
+                "Excellent golden hour lighting adds warmth.",
+            ],
+            "could_improve": [
+                "Consider adding foreground interest.",
+                "The horizon could be straighter.",
+            ],
+            "key_recommendation": "Return at sunset for more dramatic light.",
+        }
+
+        explanation = OpenRouterService.format_explanation(critique)
+
+        assert "This is a well-composed landscape shot" in explanation
+        assert "**What's working:**" in explanation
+        assert "Strong composition" in explanation
+        assert "**Could improve:**" in explanation
+        assert "foreground interest" in explanation
+
+    def test_format_explanation_empty_critique(self, monkeypatch):
+        """Test that format_explanation handles empty critique gracefully."""
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
+        monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+        from api.services.openrouter import OpenRouterService
+
+        critique = {}
+        explanation = OpenRouterService.format_explanation(critique)
+
+        assert explanation == "Unable to generate critique."
+
+    def test_format_improvements(self, monkeypatch):
+        """Test that format_improvements extracts key recommendation."""
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
+        monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+        from api.services.openrouter import OpenRouterService
+
+        critique = {
+            "could_improve": [
+                "Add foreground interest.",
+                "Straighten the horizon.",
+            ],
+            "key_recommendation": "Return at sunset for dramatic light.",
+        }
+
+        improvements = OpenRouterService.format_improvements(critique)
+
+        assert "Add foreground interest." in improvements
+        assert "Straighten the horizon." in improvements
+        assert "**Key recommendation:**" in improvements
+        assert "sunset" in improvements
+
+    def test_format_improvements_empty(self, monkeypatch):
+        """Test that format_improvements handles empty critique."""
+        monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", FAKE_SERVICE_JWT)
+        monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+        from api.services.openrouter import OpenRouterService
+
+        critique = {}
+        improvements = OpenRouterService.format_improvements(critique)
+
+        assert improvements == "No specific improvements identified."
+
+
 class TestRateLimiting:
     """Tests for rate limiting."""
 
