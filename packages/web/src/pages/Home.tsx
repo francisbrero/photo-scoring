@@ -279,7 +279,7 @@ export function Home() {
             You know great photos when you see them.
           </h2>
           <p className="text-xl text-[var(--text-secondary)]">
-            But scrolling through thousands? <span className="text-[#e94560] font-semibold">Exhausting.</span>
+            But scrolling through thousands can be <span className="text-[#e94560] font-semibold">exhausting.</span>
           </p>
         </AnimatedSection>
       </section>
@@ -322,8 +322,8 @@ export function Home() {
           </div>
 
           <p className="text-xl text-center text-[var(--text-secondary)] max-w-2xl mx-auto">
-            <span className="text-[var(--text-primary)] font-semibold">500 photos from your trip?</span>
-            {' '}AI finds the 20 worth keeping — in minutes.
+            <span className="text-[var(--text-primary)] font-semibold">500+ photos from your latest trip?</span>
+            {' '}Our AI will find the 20 worth keeping, in just minutes.
           </p>
         </AnimatedSection>
       </section>
@@ -414,7 +414,7 @@ export function Home() {
           </div>
 
           <p className="text-xl text-center text-[var(--text-secondary)] mt-10 max-w-2xl mx-auto">
-            Understand exactly what's working — and what to improve.
+            Understand exactly what's working, and what to improve.
           </p>
         </AnimatedSection>
       </section>

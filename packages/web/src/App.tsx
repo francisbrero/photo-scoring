@@ -14,6 +14,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Upload } from './pages/Upload';
 import { Pricing } from './pages/Pricing';
 import { About } from './pages/About';
+import { Contact } from './pages/Contact';
 
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -29,6 +30,7 @@ function AppContent() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
 
         {/* Protected Routes */}
         <Route

@@ -1,9 +1,17 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Footer } from '../components/Footer';
 
 export function About() {
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   return (
-    <div className="min-h-[calc(100vh-80px)] py-16 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-[calc(100vh-80px)] flex flex-col">
+      <div className="flex-1 py-16 px-4">
+        <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-16">
           <h1 className="text-4xl md:text-5xl font-bold text-[var(--text-primary)] mb-4">
@@ -133,10 +141,11 @@ export function About() {
             <div>
               <h3 className="font-semibold text-[var(--text-primary)] mb-2">10. Contact</h3>
               <p>
-                For questions about these terms or our service, please contact us at{' '}
-                <a href="mailto:support@photoscorer.com" className="text-[#e94560] hover:underline">
-                  support@photoscorer.com
-                </a>
+                For questions about these terms or our service, please{' '}
+                <Link to="/contact" className="text-[#e94560] hover:underline">
+                  contact us
+                </Link>
+                .
               </p>
             </div>
           </div>
@@ -158,7 +167,10 @@ export function About() {
             Start with 5 free credits. No credit card required.
           </p>
         </div>
+        </div>
       </div>
+
+      <Footer />
     </div>
   );
 }
