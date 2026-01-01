@@ -56,7 +56,7 @@ const GRID_IMAGES = [
 
 // Images for the "Find the Keepers" section with scores
 const KEEPER_IMAGES = [
-  { url: 'https://images.unsplash.com/photo-1518173946687-a4c036bc3c95?w=300&q=70', score: 72 },
+  { url: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=300&q=70', score: 72 },
   { url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=300&q=70', score: 89 },
   { url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=300&q=70', score: 94 },
   { url: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&q=70', score: 61 },
