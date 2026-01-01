@@ -26,6 +26,87 @@ const CAROUSEL_IMAGES = [
   },
 ];
 
+// Images for the problem section grid (mixed quality travel photos)
+const GRID_IMAGES = [
+  'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=200&q=60',
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=200&q=60',
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=200&q=60',
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=200&q=60',
+  'https://images.unsplash.com/photo-1505142468610-359e7d316be0?w=200&q=60',
+  'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=200&q=60',
+  'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=200&q=60',
+  'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=200&q=60',
+  'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=200&q=60',
+  'https://images.unsplash.com/photo-1465056836041-7f43ac27dcb5?w=200&q=60',
+  'https://images.unsplash.com/photo-1482938289607-e9573fc25ebb?w=200&q=60',
+  'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=200&q=60',
+  'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=200&q=60',
+  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200&q=60',
+  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=200&q=60',
+  'https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=200&q=60',
+  'https://images.unsplash.com/photo-1518173946687-a4c036bc3c95?w=200&q=60',
+  'https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=200&q=60',
+  'https://images.unsplash.com/photo-1504893524553-b855bce32c67?w=200&q=60',
+  'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=200&q=60',
+  'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=200&q=60',
+  'https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=200&q=60',
+  'https://images.unsplash.com/photo-1505765050516-f72dcac9c60e?w=200&q=60',
+  'https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?w=200&q=60',
+];
+
+// Images for the "Find the Keepers" section with scores
+const KEEPER_IMAGES = [
+  { url: 'https://images.unsplash.com/photo-1518173946687-a4c036bc3c95?w=300&q=70', score: 72 },
+  { url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=300&q=70', score: 89 },
+  { url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=300&q=70', score: 94 },
+  { url: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&q=70', score: 61 },
+  { url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=300&q=70', score: 78 },
+];
+
+// Images for the "Learn From Every Shot" rotating showcase
+const LEARN_IMAGES = [
+  {
+    url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80',
+    score: 78,
+    composition: { score: 8, tip: 'Strong rule of thirds placement' },
+    lighting: { score: 6, tip: 'Slightly overexposed highlights' },
+    sharpness: { score: 9, tip: 'Excellent focus throughout' },
+    tip: 'Try shooting 30 minutes earlier to capture softer, more even lighting.',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80',
+    score: 92,
+    composition: { score: 9, tip: 'Beautiful leading lines draw the eye' },
+    lighting: { score: 9, tip: 'Perfect golden hour warmth' },
+    sharpness: { score: 8, tip: 'Sharp foreground, soft background' },
+    tip: 'Consider a polarizing filter to enhance the sky contrast even more.',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=800&q=80',
+    score: 85,
+    composition: { score: 7, tip: 'Centered subject works well here' },
+    lighting: { score: 9, tip: 'Diffused light creates even exposure' },
+    sharpness: { score: 9, tip: 'Tack sharp throughout the frame' },
+    tip: 'Try a longer exposure to create silky smooth water effect.',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800&q=80',
+    score: 88,
+    composition: { score: 9, tip: 'Perfect reflection creates symmetry' },
+    lighting: { score: 8, tip: 'Blue hour provides calm mood' },
+    sharpness: { score: 8, tip: 'Good sharpness across the frame' },
+    tip: 'A graduated ND filter would help balance the sky exposure.',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&q=80',
+    score: 71,
+    composition: { score: 6, tip: 'Path creates nice leading line' },
+    lighting: { score: 7, tip: 'Dappled light adds interest' },
+    sharpness: { score: 8, tip: 'Good focus on the path' },
+    tip: 'Lower angle would make the path more prominent and dramatic.',
+  },
+];
+
 // Hook for scroll-triggered animations
 function useScrollAnimation() {
   const ref = useRef<HTMLDivElement>(null);
@@ -75,9 +156,18 @@ function AnimatedSection({
   );
 }
 
+// Score color helper
+function getScoreColor(score: number): string {
+  if (score >= 90) return '#4ade80';
+  if (score >= 75) return '#a3e635';
+  if (score >= 60) return '#facc15';
+  return '#fb923c';
+}
+
 export function Home() {
   const { user } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [learnImageIndex, setLearnImageIndex] = useState(0);
 
   // Carousel auto-advance
   useEffect(() => {
@@ -87,6 +177,17 @@ export function Home() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Learn section image rotation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLearnImageIndex((prev) => (prev + 1) % LEARN_IMAGES.length);
+    }, 5000); // 5 seconds per image
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const currentLearnImage = LEARN_IMAGES[learnImageIndex];
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
@@ -155,14 +256,22 @@ export function Home() {
       {/* ============================================ */}
       <section className="py-20 px-4 bg-[var(--bg-secondary)]">
         <AnimatedSection className="max-w-4xl mx-auto text-center">
-          {/* Grid of photo thumbnails with question marks */}
-          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-8 opacity-60">
-            {Array.from({ length: 24 }).map((_, i) => (
+          {/* Grid of photo thumbnails with question marks overlay */}
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-8">
+            {GRID_IMAGES.map((url, i) => (
               <div
                 key={i}
-                className="aspect-square bg-[var(--bg-tertiary)] rounded-lg flex items-center justify-center"
+                className="aspect-square rounded-lg overflow-hidden relative group"
               >
-                <span className="text-2xl text-[var(--text-muted)]">?</span>
+                <img
+                  src={url}
+                  alt=""
+                  className="w-full h-full object-cover opacity-60"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <span className="text-2xl text-white/70 font-bold">?</span>
+                </div>
               </div>
             ))}
           </div>
@@ -189,35 +298,30 @@ export function Home() {
 
           {/* Photo thumbnails with scores */}
           <div className="flex justify-center gap-2 sm:gap-4 mb-8 flex-wrap">
-            {[
-              { score: 72, highlight: false },
-              { score: 89, highlight: false },
-              { score: 94, highlight: true },
-              { score: 61, highlight: false },
-              { score: 78, highlight: false },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className={`relative w-20 h-20 sm:w-28 sm:h-28 rounded-lg overflow-hidden transition-transform ${
-                  item.highlight ? 'ring-4 ring-[#4ade80] scale-110' : 'opacity-70'
-                }`}
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-[var(--bg-tertiary)] to-[var(--bg-secondary)]" />
+            {KEEPER_IMAGES.map((item, i) => {
+              const isHighlight = item.score === Math.max(...KEEPER_IMAGES.map(k => k.score));
+              return (
                 <div
-                  className={`absolute bottom-1 right-1 sm:bottom-2 sm:right-2 px-2 py-0.5 rounded text-sm font-bold ${
-                    item.score >= 90
-                      ? 'bg-[#4ade80] text-black'
-                      : item.score >= 75
-                      ? 'bg-[#a3e635] text-black'
-                      : item.score >= 60
-                      ? 'bg-[#facc15] text-black'
-                      : 'bg-[#fb923c] text-black'
+                  key={i}
+                  className={`relative w-20 h-20 sm:w-28 sm:h-28 rounded-lg overflow-hidden transition-all duration-300 ${
+                    isHighlight ? 'ring-4 ring-[#4ade80] scale-110 z-10' : 'opacity-70 hover:opacity-90'
                   }`}
                 >
-                  {item.score}
+                  <img
+                    src={item.url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <div
+                    className={`absolute bottom-1 right-1 sm:bottom-2 sm:right-2 px-2 py-0.5 rounded text-sm font-bold text-black`}
+                    style={{ backgroundColor: getScoreColor(item.score) }}
+                  >
+                    {item.score}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <p className="text-xl text-center text-[var(--text-secondary)] max-w-2xl mx-auto">
@@ -241,42 +345,75 @@ export function Home() {
 
           {/* Side-by-side layout */}
           <div className="grid md:grid-cols-2 gap-8 items-center">
-            {/* Sample photo placeholder */}
-            <div className="aspect-[4/3] bg-gradient-to-br from-[var(--bg-tertiary)] to-[var(--bg-primary)] rounded-xl overflow-hidden relative">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-6xl opacity-30">📷</div>
+            {/* Rotating photo */}
+            <div className="aspect-[4/3] rounded-xl overflow-hidden relative">
+              {LEARN_IMAGES.map((image, index) => (
+                <div
+                  key={image.url}
+                  className={`absolute inset-0 transition-opacity duration-1000 ${
+                    index === learnImageIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  <img
+                    src={image.url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+              <div
+                className="absolute bottom-4 left-4 px-3 py-1 rounded font-bold text-lg text-black transition-all duration-500"
+                style={{ backgroundColor: getScoreColor(currentLearnImage.score) }}
+              >
+                {currentLearnImage.score}
               </div>
-              <div className="absolute bottom-4 left-4 px-3 py-1 bg-[#a3e635] text-black rounded font-bold text-lg">
-                78
+              {/* Image indicator dots */}
+              <div className="absolute bottom-4 right-4 flex gap-1.5">
+                {LEARN_IMAGES.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setLearnImageIndex(index)}
+                    className={`w-2 h-2 rounded-full transition-all ${
+                      index === learnImageIndex ? 'bg-white w-4' : 'bg-white/50'
+                    }`}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* Score breakdown */}
+            {/* Score breakdown - updates with image */}
             <div className="space-y-6">
               {[
-                { label: 'Composition', score: 8, color: '#4ade80', tip: 'Strong rule of thirds placement' },
-                { label: 'Lighting', score: 6, color: '#facc15', tip: 'Slightly overexposed highlights' },
-                { label: 'Sharpness', score: 9, color: '#4ade80', tip: 'Excellent focus throughout' },
+                { label: 'Composition', data: currentLearnImage.composition },
+                { label: 'Lighting', data: currentLearnImage.lighting },
+                { label: 'Sharpness', data: currentLearnImage.sharpness },
               ].map((item) => (
                 <div key={item.label}>
                   <div className="flex justify-between mb-2">
                     <span className="text-[var(--text-primary)] font-medium">{item.label}</span>
-                    <span className="font-bold" style={{ color: item.color }}>{item.score}/10</span>
+                    <span className="font-bold" style={{ color: getScoreColor(item.data.score * 10) }}>
+                      {item.data.score}/10
+                    </span>
                   </div>
                   <div className="h-2 bg-[var(--bg-primary)] rounded-full overflow-hidden mb-2">
                     <div
-                      className="h-full rounded-full transition-all duration-1000"
-                      style={{ width: `${item.score * 10}%`, backgroundColor: item.color }}
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${item.data.score * 10}%`,
+                        backgroundColor: getScoreColor(item.data.score * 10)
+                      }}
                     />
                   </div>
-                  <p className="text-sm text-[var(--text-secondary)]">{item.tip}</p>
+                  <p className="text-sm text-[var(--text-secondary)] transition-opacity duration-500">
+                    {item.data.tip}
+                  </p>
                 </div>
               ))}
 
               <div className="mt-6 p-4 bg-[var(--bg-primary)] rounded-lg border-l-4 border-[#e94560]">
-                <p className="text-[var(--text-secondary)]">
-                  <span className="text-[#e94560] font-semibold">💡 Tip:</span> Try shooting 30 minutes earlier
-                  to capture softer, more even lighting.
+                <p className="text-[var(--text-secondary)] transition-opacity duration-500">
+                  <span className="text-[#e94560] font-semibold">💡 Tip:</span> {currentLearnImage.tip}
                 </p>
               </div>
             </div>
