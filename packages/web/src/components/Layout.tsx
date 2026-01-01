@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { Theme } from '../hooks/useTheme';
 import { ThemeToggle } from './ThemeToggle';
@@ -23,6 +23,24 @@ export function Layout({
   const location = useLocation();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  const isHomePage = location.pathname === '/';
+
+  // Track scroll position for floating header on home page
+  useEffect(() => {
+    if (!isHomePage) {
+      setScrolled(false);
+      return;
+    }
+
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 100);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isHomePage]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -31,10 +49,19 @@ export function Layout({
 
   const isActive = (path: string) => location.pathname === path;
 
+  // For home page, show floating header when scrolled
+  const headerClasses = isHomePage
+    ? `fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? 'bg-[var(--bg-secondary)]/95 backdrop-blur-sm border-b border-[var(--border-color)] translate-y-0'
+          : '-translate-y-full'
+      }`
+    : 'bg-[var(--bg-secondary)] border-b border-[var(--border-color)] sticky top-0 z-50';
+
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {/* Header */}
-      <header className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)] sticky top-0 z-50">
+      <header className={headerClasses}>
         <div className="max-w-7xl mx-auto px-5 py-4">
           <div className="flex items-center justify-between">
             {/* Logo */}
@@ -171,7 +198,12 @@ export function Layout({
       </header>
 
       {/* Main Content */}
-      <main className="px-4 py-5 max-w-7xl mx-auto">{children}</main>
+      {isHomePage ? (
+        // Home page renders without wrapper padding for fullscreen sections
+        <main>{children}</main>
+      ) : (
+        <main className="px-4 py-5 max-w-7xl mx-auto">{children}</main>
+      )}
     </div>
   );
 }
