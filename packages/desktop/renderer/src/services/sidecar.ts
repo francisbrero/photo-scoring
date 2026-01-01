@@ -128,3 +128,20 @@ export async function clearCache(): Promise<void> {
     throw new Error(error.detail || 'Failed to clear cache');
   }
 }
+
+export async function getCachedScores(imagePaths: string[]): Promise<Record<string, ScoreResult | null>> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/inference/cached-scores`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_paths: imagePaths }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get cached scores');
+  }
+
+  const data = await response.json();
+  return data.scores;
+}

@@ -8,8 +8,20 @@ export class SidecarManager {
   private port: number | null = null;
   private readonly healthCheckInterval = 5000;
   private healthCheckTimer: NodeJS.Timeout | null = null;
+  private isExternalSidecar = false;
 
   async start(): Promise<number> {
+    // In development, check if an external sidecar is already running on port 9000
+    if (!app.isPackaged) {
+      const externalPort = 9000;
+      if (await this.checkExternalSidecar(externalPort)) {
+        console.log(`Using external sidecar on port ${externalPort}`);
+        this.port = externalPort;
+        this.isExternalSidecar = true;
+        return this.port;
+      }
+    }
+
     this.port = await this.findAvailablePort();
 
     const sidecarPath = this.getSidecarPath();
@@ -17,7 +29,14 @@ export class SidecarManager {
 
     console.log(`Starting sidecar: ${pythonPath} ${sidecarPath} on port ${this.port}`);
 
-    this.process = spawn(pythonPath, ['-m', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1'], {
+    // Use uv run in development mode for proper Python environment
+    const args = app.isPackaged
+      ? ['-m', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1']
+      : ['run', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1'];
+
+    const command = app.isPackaged ? pythonPath : 'uv';
+
+    this.process = spawn(command, args, {
       cwd: sidecarPath,
       env: {
         ...process.env,
@@ -43,6 +62,15 @@ export class SidecarManager {
     this.startHealthCheck();
 
     return this.port;
+  }
+
+  private async checkExternalSidecar(port: number): Promise<boolean> {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   async stop(): Promise<void> {
@@ -77,7 +105,7 @@ export class SidecarManager {
   }
 
   isRunning(): boolean {
-    return this.process !== null && !this.process.killed;
+    return this.isExternalSidecar || (this.process !== null && !this.process.killed);
   }
 
   private getSidecarPath(): string {

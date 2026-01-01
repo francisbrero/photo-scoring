@@ -25,6 +25,8 @@ export interface ScoreResult {
   technical_score: number;
   attributes: Attributes;
   explanation: string;
+  improvements: string[];
+  description: string;
   cached: boolean;
 }
 

@@ -3,6 +3,16 @@ import * as path from 'path';
 import { setupIpcHandlers } from './ipc';
 import { SidecarManager } from './sidecar';
 
+// Handle EPIPE errors gracefully (occurs when writing to closed pipes)
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
+process.stderr.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let sidecarManager: SidecarManager | null = null;
@@ -29,7 +39,9 @@ function createWindow(): void {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5174');
+    // Try multiple ports in case default is in use
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5174';
+    mainWindow.loadURL(devServerUrl);
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));

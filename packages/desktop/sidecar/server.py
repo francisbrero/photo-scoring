@@ -4,7 +4,13 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path to import photo_score package
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+root_path = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(root_path))
+
+# Load environment variables from root .env file
+from dotenv import load_dotenv
+
+load_dotenv(root_path / ".env")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -73,6 +73,15 @@ class Cache:
                     location_country TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS image_critique (
+                    image_id TEXT PRIMARY KEY,
+                    description TEXT,
+                    explanation TEXT,
+                    improvements TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             conn.commit()
 
     def get_inference(
@@ -237,6 +246,62 @@ class Cache:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT 1 FROM image_metadata WHERE image_id = ?",
+                (image_id,),
+            )
+            return cursor.fetchone() is not None
+
+    def get_critique(self, image_id: str) -> Optional[dict]:
+        """Retrieve cached critique data."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM image_critique WHERE image_id = ?",
+                (image_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+
+            improvements = []
+            if row["improvements"]:
+                improvements = json.loads(row["improvements"])
+
+            return {
+                "description": row["description"] or "",
+                "explanation": row["explanation"] or "",
+                "improvements": improvements,
+            }
+
+    def store_critique(
+        self,
+        image_id: str,
+        description: str,
+        explanation: str,
+        improvements: list[str],
+    ) -> None:
+        """Store critique data in cache."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO image_critique
+                (image_id, description, explanation, improvements, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    image_id,
+                    description,
+                    explanation,
+                    json.dumps(improvements),
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def has_critique(self, image_id: str) -> bool:
+        """Check if critique exists for an image."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM image_critique WHERE image_id = ?",
                 (image_id,),
             )
             return cursor.fetchone() is not None

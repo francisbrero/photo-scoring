@@ -1,3 +1,4 @@
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { PhotoWithScore } from '../../types/photo';
 
 interface ScoreViewerProps {
@@ -6,8 +7,86 @@ interface ScoreViewerProps {
   onScore: () => void;
 }
 
+const MIN_SIDEBAR_WIDTH = 280;
+const MAX_SIDEBAR_WIDTH = 600;
+const DEFAULT_SIDEBAR_WIDTH = 320;
+
 export function ScoreViewer({ photo, onClose, onScore }: ScoreViewerProps) {
   const score = photo.score;
+  const [fullImage, setFullImage] = useState<string | null>(null);
+  const [loadingFull, setLoadingFull] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Handle sidebar resize
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizing && sidebarRef.current) {
+      const containerWidth = window.innerWidth;
+      const newWidth = containerWidth - e.clientX;
+      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
+        setSidebarWidth(newWidth);
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', resize);
+      window.addEventListener('mouseup', stopResizing);
+    }
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizing, resize, stopResizing]);
+
+  // Load full resolution image when lightbox opens
+  useEffect(() => {
+    const loadFullImage = async () => {
+      setLoadingFull(true);
+      console.log('Loading full image for:', photo.file_path);
+      try {
+        const url = `http://localhost:9000/api/photos/full?path=${encodeURIComponent(photo.file_path)}&max_size=2000`;
+        console.log('Fetching:', url);
+        const response = await fetch(url);
+        console.log('Response status:', response.status);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Got image data, size:', data.data?.length, 'dimensions:', data.width, 'x', data.height);
+          setFullImage(`data:image/jpeg;base64,${data.data}`);
+        } else {
+          console.error('Failed to fetch full image:', response.status, response.statusText);
+        }
+      } catch (error) {
+        console.error('Failed to load full image:', error);
+      } finally {
+        setLoadingFull(false);
+      }
+    };
+
+    loadFullImage();
+  }, [photo.file_path]);
+
+  // Handle ESC key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const getScoreColor = (value: number) => {
     if (value >= 0.8) return 'text-green-500';
@@ -32,37 +111,54 @@ export function ScoreViewer({ photo, onClose, onScore }: ScoreViewerProps) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/80"
-        onClick={onClose}
-      />
-
-      {/* Content */}
-      <div className="relative flex w-full max-w-6xl mx-auto my-8">
-        {/* Image */}
-        <div className="flex-1 flex items-center justify-center p-4">
-          {photo.thumbnail ? (
-            <img
-              src={photo.thumbnail}
-              alt={photo.filename}
-              className="max-w-full max-h-full object-contain rounded-lg"
-            />
+    <div className={`fixed inset-0 z-50 bg-black/95 ${isResizing ? 'select-none' : ''}`}>
+      {/* Main layout */}
+      <div className="flex h-full">
+        {/* Image area - click to close */}
+        <div
+          className="flex-1 flex items-center justify-center p-8 cursor-pointer"
+          onClick={onClose}
+        >
+          {(fullImage || photo.thumbnail) ? (
+            <div className="relative">
+              <img
+                src={fullImage || photo.thumbnail}
+                alt={photo.filename}
+                className="max-w-full max-h-[calc(100vh-4rem)] object-contain shadow-2xl"
+                onClick={(e) => e.stopPropagation()} // Don't close when clicking image itself
+              />
+              {loadingFull && !fullImage && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <div className="text-white text-sm">Loading full resolution...</div>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="text-gray-400">Loading image...</div>
           )}
         </div>
 
+        {/* Resize handle */}
+        <div
+          className={`w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors ${isResizing ? 'bg-blue-500' : 'bg-gray-600'}`}
+          onMouseDown={startResizing}
+          onClick={(e) => e.stopPropagation()}
+        />
+
         {/* Sidebar */}
-        <div className="w-96 bg-white dark:bg-gray-800 rounded-lg m-4 p-6 overflow-auto">
+        <div
+          ref={sidebarRef}
+          style={{ width: sidebarWidth }}
+          className="bg-white dark:bg-gray-800 h-full p-5 overflow-y-auto flex-shrink-0 shadow-xl"
+          onClick={(e) => e.stopPropagation()} // Prevent close when clicking sidebar
+        >
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
               Score Details
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -126,15 +222,47 @@ export function ScoreViewer({ photo, onClose, onScore }: ScoreViewerProps) {
                 </div>
               </div>
 
-              {/* Explanation */}
+              {/* Description */}
+              {score.description && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Description
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                    {score.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Explanation / Critique */}
               {score.explanation && (
-                <div>
+                <div className="mb-6">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     Analysis
                   </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-line">
                     {score.explanation}
                   </p>
+                </div>
+              )}
+
+              {/* Improvements */}
+              {score.improvements && score.improvements.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Recommendations
+                  </h3>
+                  <ul className="space-y-2">
+                    {score.improvements.map((improvement, index) => (
+                      <li
+                        key={index}
+                        className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2"
+                      >
+                        <span className="text-blue-500 mt-0.5">•</span>
+                        <span>{improvement}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </>

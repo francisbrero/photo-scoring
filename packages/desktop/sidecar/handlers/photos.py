@@ -7,7 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ExifTags
+from PIL.ImageOps import exif_transpose
 
 from photo_score.ingestion.discover import discover_images, compute_image_id
 from photo_score.ingestion.metadata import extract_exif
@@ -100,6 +101,9 @@ async def get_thumbnail(
             pillow_heif.register_heif_opener()
 
         with Image.open(file_path) as img:
+            # Apply EXIF orientation to fix rotation
+            img = exif_transpose(img)
+
             # Convert to RGB if necessary
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
@@ -124,6 +128,66 @@ async def get_thumbnail(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate thumbnail: {e}"
+        )
+
+
+class FullImageResponse(BaseModel):
+    """Response for full resolution image."""
+
+    image_id: str
+    data: str  # base64 encoded
+    width: int
+    height: int
+    format: str
+
+
+@router.get("/full", response_model=FullImageResponse)
+async def get_full_image(
+    path: str = Query(..., description="Path to the image file"),
+    max_size: int = Query(2000, description="Maximum dimension (width or height)"),
+):
+    """Get a full resolution image (scaled to max_size)."""
+    file_path = Path(path)
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {path}")
+
+    try:
+        # Handle HEIC files
+        if file_path.suffix.lower() in (".heic", ".heif"):
+            import pillow_heif
+
+            pillow_heif.register_heif_opener()
+
+        with Image.open(file_path) as img:
+            # Apply EXIF orientation to fix rotation
+            img = exif_transpose(img)
+
+            # Convert to RGB if necessary
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            # Scale down if larger than max_size
+            if img.width > max_size or img.height > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+            # Save to bytes
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=92)
+            buffer.seek(0)
+
+            image_id = compute_image_id(file_path)
+
+            return FullImageResponse(
+                image_id=image_id,
+                data=base64.b64encode(buffer.getvalue()).decode("utf-8"),
+                width=img.width,
+                height=img.height,
+                format="jpeg",
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load full image: {e}"
         )
 
 

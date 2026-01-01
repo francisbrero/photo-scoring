@@ -1,8 +1,13 @@
 """Inference and scoring handlers."""
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Optional
+
+# Get root path for config files
+ROOT_PATH = Path(__file__).parent.parent.parent.parent.parent
+DEFAULT_CONFIG = ROOT_PATH / "configs" / "default.yaml"
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -48,6 +53,8 @@ class ScoreResponse(BaseModel):
     technical_score: float
     attributes: AttributesResponse
     explanation: str
+    improvements: list[str] = []
+    description: str = ""
     cached: bool
 
 
@@ -125,35 +132,71 @@ async def score_image(request: ScoreRequest):
         # Check cache first
         attrs = cache.get_attributes(image_id)
 
+        # Variables for critique data (from fresh inference)
+        critique_explanation = ""
+        improvements: list[str] = []
+        description = ""
+
         if attrs is None:
-            # Need to run inference
+            # Need to run inference - run in thread pool to not block event loop
             from photo_score.scoring.composite import CompositeScorer
 
-            scorer = CompositeScorer()
-            result = scorer.score_image(file_path)
+            def run_scoring():
+                scorer = CompositeScorer()
+                return scorer.score_image(file_path)
 
+            # Run blocking inference in a thread pool
+            result = await asyncio.to_thread(run_scoring)
+
+            # CompositeResult has weighted scores directly on the object
             attrs = NormalizedAttributes(
                 image_id=image_id,
-                composition=result.aesthetic_scores.composition,
-                subject_strength=result.aesthetic_scores.subject_strength,
-                visual_appeal=result.aesthetic_scores.visual_appeal,
-                sharpness=result.technical_scores.sharpness,
-                exposure_balance=result.technical_scores.exposure_balance,
-                noise_level=result.technical_scores.noise_level,
+                composition=result.composition,
+                subject_strength=result.subject_strength,
+                visual_appeal=result.visual_appeal,
+                sharpness=result.sharpness,
+                exposure_balance=result.exposure,
+                noise_level=result.noise_level,
             )
             cache.store_attributes(attrs)
+
+            # Capture critique data from CompositeResult
+            critique_explanation = result.explanation
+            improvements = result.improvements
+            description = result.description
+
+            # Store critique in cache for future retrieval
+            cache.store_critique(
+                image_id,
+                description=description,
+                explanation=critique_explanation,
+                improvements=improvements,
+            )
         else:
             cached = True
+            # Try to load cached critique
+            cached_critique = cache.get_critique(image_id)
+            if cached_critique:
+                critique_explanation = cached_critique["explanation"]
+                improvements = cached_critique["improvements"]
+                description = cached_critique["description"]
 
         # Load config and compute score
-        config_path = request.config_path or "configs/default.yaml"
-        config = load_config(Path(config_path))
+        config_path = (
+            Path(request.config_path) if request.config_path else DEFAULT_CONFIG
+        )
+        config = load_config(config_path)
         reducer = ScoringReducer(config)
         score_result = reducer.compute_scores(image_id, str(file_path), attrs)
 
-        # Generate explanation
-        explainer = ExplanationGenerator(config)
-        explanation = explainer.generate(score_result)
+        # Use critique explanation if available, otherwise generate basic one
+        if critique_explanation:
+            explanation = critique_explanation
+        else:
+            explainer = ExplanationGenerator(config)
+            explanation = explainer.generate(
+                attrs, score_result.contributions, score_result.final_score
+            )
 
         return ScoreResponse(
             image_id=image_id,
@@ -173,6 +216,8 @@ async def score_image(request: ScoreRequest):
                 model_version=attrs.model_version,
             ),
             explanation=explanation,
+            improvements=improvements,
+            description=description,
             cached=cached,
         )
     except Exception as e:
@@ -201,14 +246,18 @@ async def rescore_image(request: ScoreRequest):
             )
 
         # Load config and compute score
-        config_path = request.config_path or "configs/default.yaml"
-        config = load_config(Path(config_path))
+        config_path = (
+            Path(request.config_path) if request.config_path else DEFAULT_CONFIG
+        )
+        config = load_config(config_path)
         reducer = ScoringReducer(config)
         score_result = reducer.compute_scores(image_id, str(file_path), attrs)
 
         # Generate explanation
         explainer = ExplanationGenerator(config)
-        explanation = explainer.generate(score_result)
+        explanation = explainer.generate(
+            attrs, score_result.contributions, score_result.final_score
+        )
 
         return ScoreResponse(
             image_id=image_id,
@@ -234,6 +283,195 @@ async def rescore_image(request: ScoreRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class CachedScoreRequest(BaseModel):
+    """Request to get cached scores for multiple images."""
+
+    image_paths: list[str]
+
+
+class CachedScoreResponse(BaseModel):
+    """Response with cached scores (null if not cached)."""
+
+    scores: dict[str, Optional[ScoreResponse]]
+
+
+@router.post("/cached-scores", response_model=CachedScoreResponse)
+async def get_cached_scores(request: CachedScoreRequest):
+    """Get cached scores for multiple images without running inference."""
+    scores: dict[str, Optional[ScoreResponse]] = {}
+
+    for image_path in request.image_paths:
+        file_path = Path(image_path)
+        if not file_path.exists():
+            scores[image_path] = None
+            continue
+
+        try:
+            image_id = compute_image_id(file_path)
+            cache = Cache()
+            attrs = cache.get_attributes(image_id)
+
+            if attrs is None:
+                scores[image_path] = None
+                continue
+
+            # Load config and compute score from cached attributes
+            config = load_config(DEFAULT_CONFIG)
+            reducer = ScoringReducer(config)
+            score_result = reducer.compute_scores(image_id, str(file_path), attrs)
+
+            # Try to get cached critique
+            cached_critique = cache.get_critique(image_id)
+            if cached_critique:
+                explanation = cached_critique["explanation"]
+                improvements = cached_critique["improvements"]
+                description = cached_critique["description"]
+            else:
+                # Fall back to basic explanation
+                explainer = ExplanationGenerator(config)
+                explanation = explainer.generate(
+                    attrs, score_result.contributions, score_result.final_score
+                )
+                improvements = []
+                description = ""
+
+            scores[image_path] = ScoreResponse(
+                image_id=image_id,
+                image_path=str(file_path),
+                final_score=score_result.final_score,
+                aesthetic_score=score_result.aesthetic_score,
+                technical_score=score_result.technical_score,
+                attributes=AttributesResponse(
+                    image_id=attrs.image_id,
+                    composition=attrs.composition,
+                    subject_strength=attrs.subject_strength,
+                    visual_appeal=attrs.visual_appeal,
+                    sharpness=attrs.sharpness,
+                    exposure_balance=attrs.exposure_balance,
+                    noise_level=attrs.noise_level,
+                    model_name=attrs.model_name,
+                    model_version=attrs.model_version,
+                ),
+                explanation=explanation,
+                improvements=improvements,
+                description=description,
+                cached=True,
+            )
+        except Exception:
+            scores[image_path] = None
+
+    return CachedScoreResponse(scores=scores)
+
+
+class RegenerateCritiqueRequest(BaseModel):
+    """Request to regenerate critique for images with cached attributes."""
+
+    image_paths: list[str]
+
+
+class RegenerateCritiqueResponse(BaseModel):
+    """Response for critique regeneration."""
+
+    regenerated: int
+    skipped: int
+    errors: int
+
+
+@router.post("/regenerate-critiques", response_model=RegenerateCritiqueResponse)
+async def regenerate_critiques(request: RegenerateCritiqueRequest):
+    """Regenerate critiques for images that have attributes but no critique.
+
+    This makes API calls only for the critique generation, not full inference.
+    """
+    from photo_score.scoring.composite import CompositeScorer, CompositeResult, FeatureExtraction
+
+    regenerated = 0
+    skipped = 0
+    errors = 0
+
+    # Check for API key
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        raise HTTPException(
+            status_code=400,
+            detail="OPENROUTER_API_KEY not set.",
+        )
+
+    scorer = CompositeScorer()
+
+    def generate_critique_for_image(file_path: Path, image_id: str, attrs) -> dict | None:
+        """Generate critique for a single image."""
+        # Build a minimal CompositeResult for critique generation
+        result = CompositeResult(
+            image_path=str(file_path.name),
+            features=FeatureExtraction(),
+            composition=attrs.composition,
+            subject_strength=attrs.subject_strength,
+            visual_appeal=attrs.visual_appeal,
+            sharpness=attrs.sharpness,
+            exposure=attrs.exposure_balance,
+            noise_level=attrs.noise_level,
+            aesthetic_score=(attrs.composition * 0.4 + attrs.subject_strength * 0.35 + attrs.visual_appeal * 0.25),
+            technical_score=(attrs.sharpness * 0.4 + attrs.exposure_balance * 0.35 + attrs.noise_level * 0.25),
+        )
+        result.final_score = (result.aesthetic_score * 0.6 + result.technical_score * 0.4) * 100
+
+        critique = scorer.generate_critique(file_path, result)
+        return {
+            "description": "",  # Would need metadata call
+            "explanation": scorer.format_explanation(critique),
+            "improvements": scorer.format_improvements(critique),
+        }
+
+    for image_path in request.image_paths:
+        file_path = Path(image_path)
+        if not file_path.exists():
+            errors += 1
+            continue
+
+        try:
+            image_id = compute_image_id(file_path)
+            cache = Cache()
+
+            # Check if already has critique
+            if cache.has_critique(image_id):
+                skipped += 1
+                continue
+
+            # Check if has attributes (needed for critique context)
+            attrs = cache.get_attributes(image_id)
+            if attrs is None:
+                skipped += 1
+                continue
+
+            # Generate critique in thread pool
+            critique_data = await asyncio.to_thread(
+                generate_critique_for_image, file_path, image_id, attrs
+            )
+
+            if critique_data:
+                cache.store_critique(
+                    image_id,
+                    description=critique_data["description"],
+                    explanation=critique_data["explanation"],
+                    improvements=critique_data["improvements"],
+                )
+                regenerated += 1
+            else:
+                errors += 1
+
+        except Exception as e:
+            print(f"Error regenerating critique for {image_path}: {e}")
+            errors += 1
+
+    scorer.close()
+
+    return RegenerateCritiqueResponse(
+        regenerated=regenerated,
+        skipped=skipped,
+        errors=errors,
+    )
 
 
 @router.get("/cache/stats")
