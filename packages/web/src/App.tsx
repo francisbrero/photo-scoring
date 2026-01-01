@@ -12,6 +12,8 @@ import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { Dashboard } from './pages/Dashboard';
 import { Upload } from './pages/Upload';
+import { Pricing } from './pages/Pricing';
+import { About } from './pages/About';
 
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -25,6 +27,8 @@ function AppContent() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/about" element={<About />} />
 
         {/* Protected Routes */}
         <Route

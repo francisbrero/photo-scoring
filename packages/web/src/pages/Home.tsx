@@ -560,10 +560,10 @@ export function Home() {
 
             {/* Links */}
             <nav className="flex flex-wrap justify-center gap-6 text-[var(--text-secondary)]">
-              <a href="#" className="hover:text-[var(--text-primary)] transition-colors">About</a>
-              <a href="#" className="hover:text-[var(--text-primary)] transition-colors">Pricing</a>
-              <a href="#" className="hover:text-[var(--text-primary)] transition-colors">Blog</a>
-              <a href="#" className="hover:text-[var(--text-primary)] transition-colors">Contact</a>
+              <Link to="/about" className="hover:text-[var(--text-primary)] transition-colors">About</Link>
+              <Link to="/pricing" className="hover:text-[var(--text-primary)] transition-colors">Pricing</Link>
+              <a href="https://spraiandprai.com" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text-primary)] transition-colors">Blog</a>
+              <a href="mailto:support@photoscorer.com" className="hover:text-[var(--text-primary)] transition-colors">Contact</a>
             </nav>
 
             {/* Copyright */}
