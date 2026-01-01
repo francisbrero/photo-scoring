@@ -289,12 +289,9 @@ export function Home() {
       {/* ============================================ */}
       <section className="py-20 px-4">
         <AnimatedSection className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <span className="text-4xl">🎯</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)]">
-              Find the Keepers
-            </h2>
-          </div>
+          <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-6 text-center">
+            Find the Keepers
+          </h2>
 
           {/* Photo thumbnails with scores */}
           <div className="flex justify-center gap-2 sm:gap-4 mb-8 flex-wrap">
@@ -336,12 +333,9 @@ export function Home() {
       {/* ============================================ */}
       <section className="py-20 px-4 bg-[var(--bg-secondary)]">
         <AnimatedSection className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-center gap-3 mb-10">
-            <span className="text-4xl">📈</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)]">
-              Learn From Every Shot
-            </h2>
-          </div>
+          <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-10 text-center">
+            Learn From Every Shot
+          </h2>
 
           {/* Side-by-side layout */}
           <div className="grid md:grid-cols-2 gap-8 items-center">
@@ -413,7 +407,7 @@ export function Home() {
 
               <div className="mt-6 p-4 bg-[var(--bg-primary)] rounded-lg border-l-4 border-[#e94560]">
                 <p className="text-[var(--text-secondary)] transition-opacity duration-500">
-                  <span className="text-[#e94560] font-semibold">💡 Tip:</span> {currentLearnImage.tip}
+                  <span className="text-[#e94560] font-semibold">Tip:</span> {currentLearnImage.tip}
                 </p>
               </div>
             </div>
@@ -430,26 +424,22 @@ export function Home() {
       {/* ============================================ */}
       <section className="py-20 px-4">
         <AnimatedSection className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-center gap-3 mb-10">
-            <span className="text-4xl">🎨</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)]">
-              Match Your Style
-            </h2>
-          </div>
+          <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-10 text-center">
+            Match Your Style
+          </h2>
 
           {/* Style cards */}
           <div className="grid sm:grid-cols-3 gap-4 mb-8">
             {[
-              { name: 'Your Style', icon: '✨', description: 'Train on photos you love' },
-              { name: 'Ansel Adams', icon: '🏔️', description: 'Dramatic landscapes' },
-              { name: 'Steve McCurry', icon: '👤', description: 'Powerful portraits' },
+              { name: 'Your Style', description: 'Train on photos you love' },
+              { name: 'Ansel Adams', description: 'Dramatic landscapes' },
+              { name: 'Steve McCurry', description: 'Powerful portraits' },
             ].map((style) => (
               <div
                 key={style.name}
                 className="p-6 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] hover:border-[#e94560] transition-colors cursor-pointer group"
               >
-                <div className="text-4xl mb-3">{style.icon}</div>
-                <h3 className="text-lg font-semibold text-[var(--text-primary)] group-hover:text-[#e94560] transition-colors">
+                <h3 className="text-lg font-semibold text-[var(--text-primary)] group-hover:text-[#e94560] transition-colors mb-2">
                   {style.name}
                 </h3>
                 <p className="text-sm text-[var(--text-secondary)]">{style.description}</p>
