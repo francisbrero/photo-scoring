@@ -1,37 +1,85 @@
 ---
-description: Step-by-step guide to run the test suite
+description: Step-by-step guide to run the test suite for both CLI and cloud packages
 globs:
   - "tests/**/*.py"
+  - "packages/cloud/tests/**/*.py"
 alwaysApply: false
 ---
 
 # Runbook: Run Tests
 
-## Quick Run
+## Quick Reference
+
+| Package | Command | Requirements |
+|---------|---------|--------------|
+| CLI (photo_score) | `uv run pytest -v` | None |
+| Cloud (packages/cloud) | `uv run pytest tests/ -v` | Local Supabase |
+
+---
+
+## CLI Package Tests
 
 ```bash
 cd /Users/francis/Documents/MadKudu/photo-scoring
 uv run pytest -v
 ```
 
-## With Coverage
+### With Coverage
 
 ```bash
 uv run pytest --cov=photo_score --cov-report=term-missing -v
 ```
 
-## Run Specific Tests
+---
+
+## Cloud Package Tests
+
+### Prerequisites
+
+1. **Start local Supabase** (required for integration tests):
+   ```bash
+   supabase start
+   supabase status  # Verify it's running
+   ```
+
+2. **Navigate to cloud package**:
+   ```bash
+   cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+   ```
+
+### Run All Tests
 
 ```bash
-# Single file
-uv run pytest tests/test_reducer.py -v
-
-# Single test function
-uv run pytest tests/test_reducer.py::test_weighted_sum -v
-
-# Pattern matching
-uv run pytest -k "test_cache" -v
+uv run pytest tests/ -v
 ```
+
+### Run Unit Tests Only (No Supabase)
+
+```bash
+uv run pytest tests/ -v \
+  --ignore=tests/test_integration.py \
+  --ignore=tests/test_e2e_user_journey.py
+```
+
+### Run Integration Tests Only
+
+```bash
+uv run pytest tests/test_integration.py -v
+```
+
+### Run E2E Tests Only
+
+```bash
+uv run pytest tests/test_e2e_user_journey.py -v
+```
+
+### With Coverage
+
+```bash
+uv run pytest tests/ --cov=api --cov-report=term-missing
+```
+
+---
 
 ## Test Options
 
@@ -41,37 +89,49 @@ uv run pytest -k "test_cache" -v
 | `-x` | Stop on first failure |
 | `--lf` | Run only last failed tests |
 | `-k "pattern"` | Run tests matching pattern |
-| `--cov=photo_score` | Enable coverage |
+| `--tb=short` | Shorter traceback |
+| `--cov=<module>` | Enable coverage |
 | `--cov-report=html` | Generate HTML coverage report |
 
-## Test Structure
+---
 
-```
-tests/
-├── test_cache.py        # SQLite cache tests
-├── test_config.py       # Configuration loading tests
-├── test_explanations.py # Explanation generation tests
-└── test_reducer.py      # Score computation tests
-```
+## Test Categories (Cloud)
 
-## Writing New Tests
+| Category | File | Requires Supabase |
+|----------|------|-------------------|
+| Unit | `test_health.py`, `test_credits.py`, etc. | No |
+| Integration | `test_integration.py` | Yes |
+| E2E | `test_e2e_user_journey.py` | Yes |
 
-```python
-# tests/test_example.py
-import pytest
-from photo_score.scoring.reducer import ScoringReducer
+---
 
-def test_example():
-    """Test description."""
-    reducer = ScoringReducer(config)
-    result = reducer.compute_scores(attributes)
-    assert result.final_score > 0
+## Troubleshooting
+
+### "Supabase not running" skip message
+
+```bash
+supabase start
 ```
 
-## CI Integration
+### Invalid JWT errors
 
-Tests run automatically on:
-- Pull request creation
-- Push to master/main
+Check credentials match local Supabase:
+```bash
+supabase status --output json | jq '.SERVICE_ROLE_KEY'
+```
 
-See `.github/workflows/test.yml`
+### Reset database
+
+```bash
+supabase db reset  # WARNING: Deletes all data
+```
+
+---
+
+## Full Documentation
+
+See `packages/cloud/TESTING.md` for:
+- Writing new tests
+- Fixture reference
+- Cost considerations
+- Mocking guidelines

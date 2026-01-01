@@ -8,12 +8,13 @@ Production-tested skills for Claude Code that auto-activate based on context usi
 
 ```
 .claude/skills/
-├── technical/              # Technical domain skills (5)
+├── technical/              # Technical domain skills (6)
 │   ├── openrouter-client.md
 │   ├── scoring-pipeline.md
 │   ├── prompts-engineering.md
 │   ├── sqlite-cache.md
-│   └── web-viewer.md
+│   ├── web-viewer.md
+│   └── cloud-testing.md
 ├── runbooks/               # Step-by-step guides (5)
 │   ├── score-photos.md
 │   ├── run-tests.md
@@ -80,6 +81,7 @@ Domain-specific knowledge about the codebase:
 - Prompt engineering guidelines
 - Cache layer operations
 - Web viewer components
+- Cloud backend testing (integration/e2e tests)
 
 ### Runbooks
 Step-by-step guides for common tasks:
