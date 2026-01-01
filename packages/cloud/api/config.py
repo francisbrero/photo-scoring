@@ -1,12 +1,21 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Find the root .env file (two levels up from this file)
+_root_env = Path(__file__).parent.parent.parent.parent / ".env"
+_env_files = [".env", ".env.local"]
+if _root_env.exists():
+    _env_files.insert(0, str(_root_env))
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=tuple(_env_files), env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Supabase configuration
     supabase_url: str
