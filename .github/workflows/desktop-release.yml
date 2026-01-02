@@ -67,6 +67,9 @@ jobs:
         if: matrix.platform != 'win'
         working-directory: packages/desktop/sidecar
         run: |
+          # Install photo_score dependencies in the sidecar venv
+          uv pip install httpx pyyaml
+
           uv run python -m PyInstaller --onedir --name sidecar \
             --hidden-import uvicorn.logging \
             --hidden-import uvicorn.loops \
@@ -78,6 +81,11 @@ jobs:
             --hidden-import uvicorn.protocols.websockets.auto \
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
+            --hidden-import httpx \
+            --hidden-import yaml \
+            --hidden-import pydantic \
+            --hidden-import PIL \
+            --collect-all photo_score \
             --add-data "../../../photo_score:photo_score" \
             --add-data "../../../configs:configs" \
             server.py
@@ -89,6 +97,9 @@ jobs:
         working-directory: packages/desktop/sidecar
         shell: pwsh
         run: |
+          # Install photo_score dependencies in the sidecar venv
+          uv pip install httpx pyyaml
+
           uv run python -m PyInstaller --onedir --name sidecar `
             --hidden-import uvicorn.logging `
             --hidden-import uvicorn.loops `
@@ -100,6 +111,11 @@ jobs:
             --hidden-import uvicorn.protocols.websockets.auto `
             --hidden-import uvicorn.lifespan `
             --hidden-import uvicorn.lifespan.on `
+            --hidden-import httpx `
+            --hidden-import yaml `
+            --hidden-import pydantic `
+            --hidden-import PIL `
+            --collect-all photo_score `
             --add-data "../../../photo_score;photo_score" `
             --add-data "../../../configs;configs" `
             server.py
