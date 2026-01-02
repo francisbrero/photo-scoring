@@ -552,6 +552,7 @@ export function Home() {
             <nav className="flex flex-wrap justify-center gap-6 text-[var(--text-secondary)]">
               <Link to="/about" className="hover:text-[var(--text-primary)] transition-colors">About</Link>
               <Link to="/pricing" className="hover:text-[var(--text-primary)] transition-colors">Pricing</Link>
+              <Link to="/downloads" className="hover:text-[var(--text-primary)] transition-colors">Downloads</Link>
               <a href="https://spraiandprai.com" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text-primary)] transition-colors">Blog</a>
               <a href="mailto:support@photoscorer.com" className="hover:text-[var(--text-primary)] transition-colors">Contact</a>
             </nav>

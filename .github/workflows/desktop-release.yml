@@ -1,0 +1,214 @@
+name: Desktop App Release
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/desktop/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install desktop dependencies
+        working-directory: packages/desktop
+        run: npm ci
+
+      - name: Build desktop app
+        working-directory: packages/desktop
+        run: npm run build
+
+      - name: Install Python sidecar dependencies
+        working-directory: packages/desktop/sidecar
+        run: uv sync
+
+      - name: Bundle Python sidecar (macOS/Linux)
+        if: matrix.platform != 'win'
+        working-directory: packages/desktop/sidecar
+        run: |
+          uv run pyinstaller --onedir --name sidecar \
+            --hidden-import uvicorn.logging \
+            --hidden-import uvicorn.loops \
+            --hidden-import uvicorn.loops.auto \
+            --hidden-import uvicorn.protocols \
+            --hidden-import uvicorn.protocols.http \
+            --hidden-import uvicorn.protocols.http.auto \
+            --hidden-import uvicorn.protocols.websockets \
+            --hidden-import uvicorn.protocols.websockets.auto \
+            --hidden-import uvicorn.lifespan \
+            --hidden-import uvicorn.lifespan.on \
+            --add-data "../../../photo_score:photo_score" \
+            --add-data "../../../configs:configs" \
+            server.py
+          mkdir -p ../sidecar-dist
+          cp -r dist/sidecar/* ../sidecar-dist/
+
+      - name: Bundle Python sidecar (Windows)
+        if: matrix.platform == 'win'
+        working-directory: packages/desktop/sidecar
+        shell: pwsh
+        run: |
+          uv run pyinstaller --onedir --name sidecar `
+            --hidden-import uvicorn.logging `
+            --hidden-import uvicorn.loops `
+            --hidden-import uvicorn.loops.auto `
+            --hidden-import uvicorn.protocols `
+            --hidden-import uvicorn.protocols.http `
+            --hidden-import uvicorn.protocols.http.auto `
+            --hidden-import uvicorn.protocols.websockets `
+            --hidden-import uvicorn.protocols.websockets.auto `
+            --hidden-import uvicorn.lifespan `
+            --hidden-import uvicorn.lifespan.on `
+            --add-data "../../../photo_score;photo_score" `
+            --add-data "../../../configs;configs" `
+            server.py
+          New-Item -ItemType Directory -Force -Path ../sidecar-dist
+          Copy-Item -Recurse dist/sidecar/* ../sidecar-dist/
+
+      - name: Build distribution (macOS)
+        if: matrix.platform == 'mac'
+        working-directory: packages/desktop
+        run: npm run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build distribution (Windows)
+        if: matrix.platform == 'win'
+        working-directory: packages/desktop
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build distribution (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: packages/desktop
+        run: npm run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+          if-no-files-found: warn
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-win
+          path: packages/desktop/release/*.exe
+          if-no-files-found: warn
+
+      - name: Upload artifacts (Linux)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: packages/desktop/release/*.AppImage
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=desktop-v${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/desktop-v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=desktop-v$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Photo Scoring Desktop v${{ steps.version.outputs.version }}
+          body: |
+            ## Photo Scoring Desktop v${{ steps.version.outputs.version }}
+
+            ### Downloads
+            - **macOS**: Download the `.dmg` file
+            - **Windows**: Download the `.exe` installer
+            - **Linux**: Download the `.AppImage` file
+
+            ### What's New
+            - Desktop app with offline photo scoring
+            - Full scoring pipeline with AI-powered analysis
+            - Folder library for organizing photo collections
+            - Cached scores for instant loading
+
+            ### Installation
+            See [Downloads page](https://photoscorer.com/downloads) for installation instructions.
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -385,7 +385,11 @@ async def regenerate_critiques(request: RegenerateCritiqueRequest):
 
     This makes API calls only for the critique generation, not full inference.
     """
-    from photo_score.scoring.composite import CompositeScorer, CompositeResult, FeatureExtraction
+    from photo_score.scoring.composite import (
+        CompositeScorer,
+        CompositeResult,
+        FeatureExtraction,
+    )
 
     regenerated = 0
     skipped = 0
@@ -400,7 +404,9 @@ async def regenerate_critiques(request: RegenerateCritiqueRequest):
 
     scorer = CompositeScorer()
 
-    def generate_critique_for_image(file_path: Path, image_id: str, attrs) -> dict | None:
+    def generate_critique_for_image(
+        file_path: Path, image_id: str, attrs
+    ) -> dict | None:
         """Generate critique for a single image."""
         # Build a minimal CompositeResult for critique generation
         result = CompositeResult(
@@ -412,10 +418,20 @@ async def regenerate_critiques(request: RegenerateCritiqueRequest):
             sharpness=attrs.sharpness,
             exposure=attrs.exposure_balance,
             noise_level=attrs.noise_level,
-            aesthetic_score=(attrs.composition * 0.4 + attrs.subject_strength * 0.35 + attrs.visual_appeal * 0.25),
-            technical_score=(attrs.sharpness * 0.4 + attrs.exposure_balance * 0.35 + attrs.noise_level * 0.25),
+            aesthetic_score=(
+                attrs.composition * 0.4
+                + attrs.subject_strength * 0.35
+                + attrs.visual_appeal * 0.25
+            ),
+            technical_score=(
+                attrs.sharpness * 0.4
+                + attrs.exposure_balance * 0.35
+                + attrs.noise_level * 0.25
+            ),
         )
-        result.final_score = (result.aesthetic_score * 0.6 + result.technical_score * 0.4) * 100
+        result.final_score = (
+            result.aesthetic_score * 0.6 + result.technical_score * 0.4
+        ) * 100
 
         critique = scorer.generate_critique(file_path, result)
         return {

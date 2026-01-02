@@ -186,9 +186,7 @@ async def get_full_image(
                 format="jpeg",
             )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load full image: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to load full image: {e}")
 
 
 @router.get("/metadata", response_model=MetadataResponse)
