@@ -257,20 +257,20 @@ jobs:
             echo "Sidecar executable not found at $SIDECAR_PATH"
           fi
 
-          # Find the AppImage
-          APPIMAGE=$(find release -name "*.AppImage" | head -1)
-          if [ -z "$APPIMAGE" ]; then
-            echo "Error: AppImage not found"
-            ls -la release/
+          # Use unpacked directory instead of AppImage (AppImage requires FUSE which isn't available in CI)
+          UNPACKED_APP="release/linux-unpacked/photo-scoring-desktop"
+          if [ ! -f "$UNPACKED_APP" ]; then
+            echo "Error: Unpacked app not found at $UNPACKED_APP"
+            ls -la release/linux-unpacked/ || true
             exit 1
           fi
 
           # Make executable
-          chmod +x "$APPIMAGE"
+          chmod +x "$UNPACKED_APP"
 
           # Launch with xvfb
           echo "Launching app with xvfb..."
-          xvfb-run --auto-servernum "$APPIMAGE" --no-sandbox &
+          xvfb-run --auto-servernum "$UNPACKED_APP" --no-sandbox &
           APP_PID=$!
 
           # Wait for sidecar to be healthy
