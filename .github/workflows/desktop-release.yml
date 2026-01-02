@@ -59,7 +59,7 @@ jobs:
 
       - name: Install Python sidecar dependencies
         working-directory: packages/desktop/sidecar
-        run: uv sync
+        run: uv sync --dev
 
       - name: Bundle Python sidecar (macOS/Linux)
         if: matrix.platform != 'win'
