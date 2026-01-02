@@ -23,7 +23,7 @@ module.exports = {
     target: [
       {
         target: 'dmg',
-        arch: ['universal'],
+        arch: ['arm64'],
       },
     ],
     category: 'public.app-category.photography',
