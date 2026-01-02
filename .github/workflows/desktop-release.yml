@@ -59,13 +59,15 @@ jobs:
 
       - name: Install Python sidecar dependencies
         working-directory: packages/desktop/sidecar
-        run: uv sync --dev
+        run: |
+          uv sync
+          uv pip install pyinstaller
 
       - name: Bundle Python sidecar (macOS/Linux)
         if: matrix.platform != 'win'
         working-directory: packages/desktop/sidecar
         run: |
-          uv run pyinstaller --onedir --name sidecar \
+          uv run python -m PyInstaller --onedir --name sidecar \
             --hidden-import uvicorn.logging \
             --hidden-import uvicorn.loops \
             --hidden-import uvicorn.loops.auto \
@@ -87,7 +89,7 @@ jobs:
         working-directory: packages/desktop/sidecar
         shell: pwsh
         run: |
-          uv run pyinstaller --onedir --name sidecar `
+          uv run python -m PyInstaller --onedir --name sidecar `
             --hidden-import uvicorn.logging `
             --hidden-import uvicorn.loops `
             --hidden-import uvicorn.loops.auto `
