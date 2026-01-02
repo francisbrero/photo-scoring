@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as net from 'net';
+import * as fs from 'fs';
 import { app } from 'electron';
 
 export class SidecarManager {
@@ -24,28 +25,44 @@ export class SidecarManager {
 
     this.port = await this.findAvailablePort();
 
-    const sidecarPath = this.getSidecarPath();
-    const pythonPath = this.getPythonPath();
-
     console.log(`Starting sidecar on port ${this.port}`);
+    console.log(`app.isPackaged: ${app.isPackaged}`);
+    console.log(`process.resourcesPath: ${process.resourcesPath}`);
 
     let command: string;
     let args: string[];
     let cwd: string;
 
-    if (app.isPackaged) {
+    // Check if PyInstaller sidecar executable exists (works for both packaged and local testing)
+    const sidecarExecutable = this.getSidecarExecutable();
+    const sidecarExists = fs.existsSync(sidecarExecutable);
+    console.log(`Sidecar executable path: ${sidecarExecutable}`);
+    console.log(`Sidecar executable exists: ${sidecarExists}`);
+
+    if (sidecarExists) {
       // PyInstaller bundle - run the sidecar executable directly
-      const sidecarExecutable = this.getSidecarExecutable();
       command = sidecarExecutable;
       args = ['--port', String(this.port), '--host', '127.0.0.1'];
       cwd = path.dirname(sidecarExecutable);
       console.log(`Running packaged sidecar: ${command}`);
-    } else {
+    } else if (!app.isPackaged) {
       // Development mode - use uv run
+      const sidecarPath = this.getSidecarPath();
       command = 'uv';
       args = ['run', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1'];
       cwd = sidecarPath;
       console.log(`Running dev sidecar: ${command} ${args.join(' ')} in ${cwd}`);
+    } else {
+      // Packaged but sidecar not found - this is an error
+      const sidecarDir = path.join(process.resourcesPath, 'sidecar');
+      let dirContents = 'directory does not exist';
+      if (fs.existsSync(sidecarDir)) {
+        dirContents = fs.readdirSync(sidecarDir).join(', ');
+      }
+      throw new Error(
+        `Sidecar executable not found at ${sidecarExecutable}. ` +
+        `Contents of sidecar dir: ${dirContents}`
+      );
     }
 
     this.process = spawn(command, args, {
@@ -125,16 +142,6 @@ export class SidecarManager {
       return path.join(process.resourcesPath, 'sidecar');
     }
     return path.join(__dirname, '../../sidecar');
-  }
-
-  private getPythonPath(): string {
-    if (app.isPackaged) {
-      if (process.platform === 'win32') {
-        return path.join(process.resourcesPath, 'sidecar', 'python', 'python.exe');
-      }
-      return path.join(process.resourcesPath, 'sidecar', 'python', 'bin', 'python');
-    }
-    return 'python';
   }
 
   private getSidecarExecutable(): string {
