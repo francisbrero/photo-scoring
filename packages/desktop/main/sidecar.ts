@@ -27,17 +27,29 @@ export class SidecarManager {
     const sidecarPath = this.getSidecarPath();
     const pythonPath = this.getPythonPath();
 
-    console.log(`Starting sidecar: ${pythonPath} ${sidecarPath} on port ${this.port}`);
+    console.log(`Starting sidecar on port ${this.port}`);
 
-    // Use uv run in development mode for proper Python environment
-    const args = app.isPackaged
-      ? ['-m', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1']
-      : ['run', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1'];
+    let command: string;
+    let args: string[];
+    let cwd: string;
 
-    const command = app.isPackaged ? pythonPath : 'uv';
+    if (app.isPackaged) {
+      // PyInstaller bundle - run the sidecar executable directly
+      const sidecarExecutable = this.getSidecarExecutable();
+      command = sidecarExecutable;
+      args = ['--port', String(this.port), '--host', '127.0.0.1'];
+      cwd = path.dirname(sidecarExecutable);
+      console.log(`Running packaged sidecar: ${command}`);
+    } else {
+      // Development mode - use uv run
+      command = 'uv';
+      args = ['run', 'uvicorn', 'server:app', '--port', String(this.port), '--host', '127.0.0.1'];
+      cwd = sidecarPath;
+      console.log(`Running dev sidecar: ${command} ${args.join(' ')} in ${cwd}`);
+    }
 
     this.process = spawn(command, args, {
-      cwd: sidecarPath,
+      cwd,
       env: {
         ...process.env,
         PYTHONUNBUFFERED: '1',
@@ -123,6 +135,14 @@ export class SidecarManager {
       return path.join(process.resourcesPath, 'sidecar', 'python', 'bin', 'python');
     }
     return 'python';
+  }
+
+  private getSidecarExecutable(): string {
+    const sidecarDir = path.join(process.resourcesPath, 'sidecar');
+    if (process.platform === 'win32') {
+      return path.join(sidecarDir, 'sidecar.exe');
+    }
+    return path.join(sidecarDir, 'sidecar');
   }
 
   private async findAvailablePort(): Promise<number> {

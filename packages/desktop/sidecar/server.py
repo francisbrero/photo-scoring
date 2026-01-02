@@ -1,16 +1,26 @@
 """FastAPI sidecar server for Photo Scoring desktop app."""
 
+import argparse
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import photo_score package
-root_path = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(root_path))
+# Determine if we're running as a PyInstaller bundle
+if getattr(sys, "frozen", False):
+    # Running as compiled executable
+    bundle_dir = Path(sys._MEIPASS)
+    root_path = bundle_dir
+    sys.path.insert(0, str(bundle_dir))
+else:
+    # Running in development
+    root_path = Path(__file__).parent.parent.parent.parent
+    sys.path.insert(0, str(root_path))
 
 # Load environment variables from root .env file
 from dotenv import load_dotenv
 
-load_dotenv(root_path / ".env")
+env_file = root_path / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,3 +68,14 @@ async def get_status():
         "status": "running",
         "cache": cache_stats,
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    parser = argparse.ArgumentParser(description="Photo Scoring Sidecar Server")
+    parser.add_argument("--port", type=int, default=9000, help="Port to run on")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to")
+    args = parser.parse_args()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
