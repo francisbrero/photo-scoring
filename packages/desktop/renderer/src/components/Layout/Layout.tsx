@@ -13,7 +13,7 @@ export function Layout({ children, onSettingsClick }: LayoutProps) {
         <div className="flex items-center">
           <div className="w-20" /> {/* Space for traffic lights on macOS */}
           <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-            Photo Scoring
+            Photo Scorer
           </h1>
         </div>
         {onSettingsClick && (

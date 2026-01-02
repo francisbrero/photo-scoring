@@ -57,12 +57,12 @@ function createTray(): void {
   tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show Photo Scoring', click: () => mainWindow?.show() },
+    { label: 'Show Photo Scorer', click: () => mainWindow?.show() },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
 
-  tray.setToolTip('Photo Scoring');
+  tray.setToolTip('Photo Scorer');
   tray.setContextMenu(contextMenu);
 
   tray.on('click', () => {

@@ -5,14 +5,14 @@ import { ScoreViewer } from './components/ScoreViewer';
 import { FolderLibrary } from './components/FolderLibrary';
 import { Settings } from './components/Settings';
 import { usePhotos } from './hooks/usePhotos';
-import { checkHealth, getApiKeyStatus } from './services/sidecar';
+import { checkHealth, getAuthStatus, getCredits, type AuthStatus } from './services/sidecar';
 import type { PhotoWithScore } from './types/photo';
 
 function App() {
   const [sidecarReady, setSidecarReady] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithScore | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const {
     photos,
     isLoading,
@@ -28,7 +28,7 @@ function App() {
     removeFromLibrary,
   } = usePhotos();
 
-  // Check sidecar health and API key status on mount
+  // Check sidecar health and auth status on mount
   useEffect(() => {
     const checkSidecar = async () => {
       const healthy = await checkHealth();
@@ -36,25 +36,43 @@ function App() {
 
       if (healthy) {
         try {
-          const status = await getApiKeyStatus();
-          setApiKeyConfigured(status.is_set);
+          const status = await getAuthStatus();
+          // If authenticated, also fetch current credits
+          if (status.authenticated) {
+            try {
+              const { credits } = await getCredits();
+              status.credits = credits;
+            } catch {
+              // Keep credits from auth status if credits fetch fails
+            }
+          }
+          setAuthStatus(status);
         } catch {
-          setApiKeyConfigured(false);
+          setAuthStatus({ authenticated: false, user_email: null, credits: null });
         }
       }
     };
 
     checkSidecar();
-    const interval = setInterval(checkSidecar, 5000);
+    const interval = setInterval(checkSidecar, 30000); // Check every 30s instead of 5s
     return () => clearInterval(interval);
   }, []);
 
-  // Refresh API key status when settings is closed
+  // Refresh auth status when settings is closed
   const handleSettingsClose = useCallback(async () => {
     setShowSettings(false);
     try {
-      const status = await getApiKeyStatus();
-      setApiKeyConfigured(status.is_set);
+      const status = await getAuthStatus();
+      // If authenticated, also fetch current credits
+      if (status.authenticated) {
+        try {
+          const { credits } = await getCredits();
+          status.credits = credits;
+        } catch {
+          // Keep credits from auth status if credits fetch fails
+        }
+      }
+      setAuthStatus(status);
     } catch {
       // ignore
     }
@@ -130,7 +148,7 @@ function App() {
                     />
                   </svg>
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">
-                    {folderLibrary.length === 0 ? 'Welcome to Photo Scoring' : 'Select a Folder'}
+                    {folderLibrary.length === 0 ? 'Welcome to Photo Scorer' : 'Select a Folder'}
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 mb-6">
                     {folderLibrary.length === 0
@@ -167,15 +185,28 @@ function App() {
                   </div>
                 </div>
 
-                {/* API Key warning */}
-                {apiKeyConfigured === false && (
+                {/* Auth warning */}
+                {authStatus && !authStatus.authenticated && (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-4 py-2 text-sm flex items-center justify-between">
+                    <span>Log in to score your photos.</span>
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs font-medium"
+                    >
+                      Log in
+                    </button>
+                  </div>
+                )}
+
+                {/* Low credits warning - only show if we know credits are 0, not if null/unknown */}
+                {authStatus?.authenticated && typeof authStatus.credits === 'number' && authStatus.credits <= 0 && (
                   <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-2 text-sm flex items-center justify-between">
-                    <span>OPENROUTER_API_KEY not set. Please configure your API key.</span>
+                    <span>No credits remaining. Purchase more to continue scoring.</span>
                     <button
                       onClick={() => setShowSettings(true)}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-medium"
                     >
-                      Configure
+                      Buy Credits
                     </button>
                   </div>
                 )}

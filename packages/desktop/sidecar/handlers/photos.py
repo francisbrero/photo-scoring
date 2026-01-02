@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from PIL import Image, ExifTags
+from PIL import Image
 from PIL.ImageOps import exif_transpose
 
 from photo_score.ingestion.discover import discover_images, compute_image_id

@@ -152,14 +152,14 @@ supabase db reset
 ### All Tests (Requires Supabase)
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/ -v
 ```
 
 ### Unit Tests Only (No Supabase)
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/ -v \
   --ignore=tests/test_integration.py \
   --ignore=tests/test_e2e_user_journey.py
@@ -168,28 +168,28 @@ uv run pytest tests/ -v \
 ### Integration Tests Only
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/test_integration.py -v
 ```
 
 ### E2E Tests Only
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/test_e2e_user_journey.py -v
 ```
 
 ### Specific Test
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/test_integration.py::TestAuthIntegration::test_valid_token_accepted -v
 ```
 
 ### With Coverage
 
 ```bash
-cd packages/cloud
+cd packages/api
 uv run pytest tests/ --cov=api --cov-report=term-missing
 ```
 

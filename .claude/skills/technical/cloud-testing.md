@@ -1,8 +1,8 @@
 ---
 description: Guidelines for writing tests for the cloud backend API
 globs:
-  - "packages/cloud/tests/**/*.py"
-  - "packages/cloud/api/**/*.py"
+  - "packages/api/tests/**/*.py"
+  - "packages/api/api/**/*.py"
 alwaysApply: false
 ---
 
@@ -61,7 +61,7 @@ def test_scoring(self, integration_client, auth_headers, monkeypatch):
 ## Test Structure
 
 ```
-packages/cloud/tests/
+packages/api/tests/
 ├── conftest.py                 # Shared fixtures (unit tests)
 ├── conftest_integration.py     # Integration test fixtures
 ├── test_health.py              # Health endpoint (unit)
@@ -181,4 +181,4 @@ def test_upload(self, integration_client, auth_headers, sample_jpeg_bytes, clean
 
 ## Full Documentation
 
-See `packages/cloud/TESTING.md` for complete testing guide.
+See `packages/api/TESTING.md` for complete testing guide.

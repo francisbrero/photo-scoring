@@ -1,7 +1,5 @@
-"""Inference and scoring handlers."""
+"""Inference and scoring handlers using cloud API."""
 
-import asyncio
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -9,15 +7,23 @@ from typing import Optional
 ROOT_PATH = Path(__file__).parent.parent.parent.parent.parent
 DEFAULT_CONFIG = ROOT_PATH / "configs" / "default.yaml"
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
 
-from photo_score.ingestion.discover import compute_image_id
-from photo_score.storage.cache import Cache
-from photo_score.storage.models import NormalizedAttributes
-from photo_score.config.loader import load_config
-from photo_score.scoring.reducer import ScoringReducer
-from photo_score.scoring.explanations import ExplanationGenerator
+from photo_score.ingestion.discover import compute_image_id  # noqa: E402
+from photo_score.storage.cache import Cache  # noqa: E402
+from photo_score.storage.models import NormalizedAttributes  # noqa: E402
+from photo_score.config.loader import load_config  # noqa: E402
+from photo_score.scoring.reducer import ScoringReducer  # noqa: E402
+from photo_score.scoring.explanations import ExplanationGenerator  # noqa: E402
+
+from .cloud_client import (  # noqa: E402
+    analyze_image as cloud_analyze_image,
+    CloudInferenceError,
+    InsufficientCreditsError,
+    AuthenticationError,
+)
+from .auth import get_auth_token  # noqa: E402
 
 router = APIRouter()
 
@@ -56,6 +62,7 @@ class ScoreResponse(BaseModel):
     improvements: list[str] = []
     description: str = ""
     cached: bool
+    credits_remaining: Optional[int] = None
 
 
 class BatchScoreRequest(BaseModel):
@@ -109,7 +116,7 @@ async def get_attributes(
 
 @router.post("/score", response_model=ScoreResponse)
 async def score_image(request: ScoreRequest):
-    """Score a single image."""
+    """Score a single image using cloud API."""
     file_path = Path(request.image_path)
 
     if not file_path.exists():
@@ -117,61 +124,56 @@ async def score_image(request: ScoreRequest):
             status_code=404, detail=f"Image not found: {request.image_path}"
         )
 
-    # Check for API key
-    if not os.environ.get("OPENROUTER_API_KEY"):
+    # Check for authentication
+    if not get_auth_token():
         raise HTTPException(
-            status_code=400,
-            detail="OPENROUTER_API_KEY not set. Please configure your API key.",
+            status_code=401,
+            detail="Not logged in. Please log in to score photos.",
         )
 
     try:
         image_id = compute_image_id(file_path)
         cache = Cache()
         cached = False
+        credits_remaining = None
 
         # Check cache first
         attrs = cache.get_attributes(image_id)
 
-        # Variables for critique data (from fresh inference)
+        # Variables for critique data
         critique_explanation = ""
         improvements: list[str] = []
         description = ""
 
         if attrs is None:
-            # Need to run inference - run in thread pool to not block event loop
-            from photo_score.scoring.composite import CompositeScorer
+            # Need to run inference via cloud API
+            try:
+                result = await cloud_analyze_image(str(file_path), image_id)
 
-            def run_scoring():
-                scorer = CompositeScorer()
-                return scorer.score_image(file_path)
+                # Extract attributes from cloud response
+                cloud_attrs = result["attributes"]
+                attrs = NormalizedAttributes(
+                    image_id=image_id,
+                    composition=cloud_attrs["composition"],
+                    subject_strength=cloud_attrs["subject_strength"],
+                    visual_appeal=cloud_attrs["visual_appeal"],
+                    sharpness=cloud_attrs["sharpness"],
+                    exposure_balance=cloud_attrs["exposure_balance"],
+                    noise_level=cloud_attrs["noise_level"],
+                    model_name=cloud_attrs.get("model_name"),
+                    model_version=cloud_attrs.get("model_version"),
+                )
+                cache.store_attributes(attrs)
 
-            # Run blocking inference in a thread pool
-            result = await asyncio.to_thread(run_scoring)
+                # Get credits remaining from response
+                credits_remaining = result.get("credits_remaining")
 
-            # CompositeResult has weighted scores directly on the object
-            attrs = NormalizedAttributes(
-                image_id=image_id,
-                composition=result.composition,
-                subject_strength=result.subject_strength,
-                visual_appeal=result.visual_appeal,
-                sharpness=result.sharpness,
-                exposure_balance=result.exposure,
-                noise_level=result.noise_level,
-            )
-            cache.store_attributes(attrs)
-
-            # Capture critique data from CompositeResult
-            critique_explanation = result.explanation
-            improvements = result.improvements
-            description = result.description
-
-            # Store critique in cache for future retrieval
-            cache.store_critique(
-                image_id,
-                description=description,
-                explanation=critique_explanation,
-                improvements=improvements,
-            )
+            except AuthenticationError as e:
+                raise HTTPException(status_code=401, detail=e.message)
+            except InsufficientCreditsError as e:
+                raise HTTPException(status_code=402, detail=e.message)
+            except CloudInferenceError as e:
+                raise HTTPException(status_code=e.status_code, detail=e.message)
         else:
             cached = True
             # Try to load cached critique
@@ -219,7 +221,10 @@ async def score_image(request: ScoreRequest):
             improvements=improvements,
             description=description,
             cached=cached,
+            credits_remaining=credits_remaining,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -363,131 +368,6 @@ async def get_cached_scores(request: CachedScoreRequest):
             scores[image_path] = None
 
     return CachedScoreResponse(scores=scores)
-
-
-class RegenerateCritiqueRequest(BaseModel):
-    """Request to regenerate critique for images with cached attributes."""
-
-    image_paths: list[str]
-
-
-class RegenerateCritiqueResponse(BaseModel):
-    """Response for critique regeneration."""
-
-    regenerated: int
-    skipped: int
-    errors: int
-
-
-@router.post("/regenerate-critiques", response_model=RegenerateCritiqueResponse)
-async def regenerate_critiques(request: RegenerateCritiqueRequest):
-    """Regenerate critiques for images that have attributes but no critique.
-
-    This makes API calls only for the critique generation, not full inference.
-    """
-    from photo_score.scoring.composite import (
-        CompositeScorer,
-        CompositeResult,
-        FeatureExtraction,
-    )
-
-    regenerated = 0
-    skipped = 0
-    errors = 0
-
-    # Check for API key
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise HTTPException(
-            status_code=400,
-            detail="OPENROUTER_API_KEY not set.",
-        )
-
-    scorer = CompositeScorer()
-
-    def generate_critique_for_image(
-        file_path: Path, image_id: str, attrs
-    ) -> dict | None:
-        """Generate critique for a single image."""
-        # Build a minimal CompositeResult for critique generation
-        result = CompositeResult(
-            image_path=str(file_path.name),
-            features=FeatureExtraction(),
-            composition=attrs.composition,
-            subject_strength=attrs.subject_strength,
-            visual_appeal=attrs.visual_appeal,
-            sharpness=attrs.sharpness,
-            exposure=attrs.exposure_balance,
-            noise_level=attrs.noise_level,
-            aesthetic_score=(
-                attrs.composition * 0.4
-                + attrs.subject_strength * 0.35
-                + attrs.visual_appeal * 0.25
-            ),
-            technical_score=(
-                attrs.sharpness * 0.4
-                + attrs.exposure_balance * 0.35
-                + attrs.noise_level * 0.25
-            ),
-        )
-        result.final_score = (
-            result.aesthetic_score * 0.6 + result.technical_score * 0.4
-        ) * 100
-
-        critique = scorer.generate_critique(file_path, result)
-        return {
-            "description": "",  # Would need metadata call
-            "explanation": scorer.format_explanation(critique),
-            "improvements": scorer.format_improvements(critique),
-        }
-
-    for image_path in request.image_paths:
-        file_path = Path(image_path)
-        if not file_path.exists():
-            errors += 1
-            continue
-
-        try:
-            image_id = compute_image_id(file_path)
-            cache = Cache()
-
-            # Check if already has critique
-            if cache.has_critique(image_id):
-                skipped += 1
-                continue
-
-            # Check if has attributes (needed for critique context)
-            attrs = cache.get_attributes(image_id)
-            if attrs is None:
-                skipped += 1
-                continue
-
-            # Generate critique in thread pool
-            critique_data = await asyncio.to_thread(
-                generate_critique_for_image, file_path, image_id, attrs
-            )
-
-            if critique_data:
-                cache.store_critique(
-                    image_id,
-                    description=critique_data["description"],
-                    explanation=critique_data["explanation"],
-                    improvements=critique_data["improvements"],
-                )
-                regenerated += 1
-            else:
-                errors += 1
-
-        except Exception as e:
-            print(f"Error regenerating critique for {image_path}: {e}")
-            errors += 1
-
-    scorer.close()
-
-    return RegenerateCritiqueResponse(
-        regenerated=regenerated,
-        skipped=skipped,
-        errors=errors,
-    )
 
 
 @router.get("/cache/stats")

@@ -22,20 +22,18 @@ env_file = root_path / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from handlers.photos import router as photos_router
-from handlers.inference import router as inference_router
-from handlers.sync import router as sync_router
-from handlers.settings import router as settings_router, load_api_key_to_env
-
-# Load API key from settings file on startup
-load_api_key_to_env()
+from handlers.photos import router as photos_router  # noqa: E402
+from handlers.inference import router as inference_router  # noqa: E402
+from handlers.sync import router as sync_router  # noqa: E402
+from handlers.settings import router as settings_router  # noqa: E402
+from handlers.auth import router as auth_router  # noqa: E402
 
 app = FastAPI(
-    title="Photo Scoring Sidecar",
-    description="Local backend for Photo Scoring desktop app",
+    title="Photo Scorer Sidecar",
+    description="Local backend for Photo Scorer desktop app",
     version="0.1.0",
 )
 
@@ -53,6 +51,7 @@ app.include_router(photos_router, prefix="/api/photos", tags=["photos"])
 app.include_router(inference_router, prefix="/api/inference", tags=["inference"])
 app.include_router(sync_router, prefix="/api/sync", tags=["sync"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 
 @app.get("/health")

@@ -142,7 +142,7 @@ jobs:
           echo "Starting smoke test for macOS..."
 
           # Find the app bundle
-          APP_PATH="release/mac-arm64/Photo Scoring.app"
+          APP_PATH="release/mac-arm64/Photo Scorer.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "Error: App not found at $APP_PATH"
             ls -la release/
@@ -200,7 +200,7 @@ jobs:
 
           # Kill the app
           echo "Stopping app..."
-          pkill -f "Photo Scoring" || true
+          pkill -f "Photo Scorer" || true
           pkill -f "sidecar" || true
 
           if [ "$HEALTHY" = true ]; then
@@ -312,7 +312,7 @@ jobs:
           Write-Host "Starting smoke test for Windows..."
 
           # Find the unpacked app (faster than running installer)
-          $appPath = "release\win-unpacked\Photo Scoring.exe"
+          $appPath = "release\win-unpacked\Photo Scorer.exe"
           if (-not (Test-Path $appPath)) {
             Write-Host "Error: App not found at $appPath"
             Get-ChildItem release\ -Recurse
@@ -421,9 +421,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: Photo Scoring Desktop v${{ steps.version.outputs.version }}
+          name: Photo Scorer Desktop v${{ steps.version.outputs.version }}
           body: |
-            ## Photo Scoring Desktop v${{ steps.version.outputs.version }}
+            ## Photo Scorer Desktop v${{ steps.version.outputs.version }}
 
             ### Downloads
             - **macOS**: Download the `.dmg` file

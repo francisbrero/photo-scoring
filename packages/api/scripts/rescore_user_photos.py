@@ -118,7 +118,7 @@ async def rescore_photo(supabase, photo: dict, inference_service) -> dict:
     # Extract features
     try:
         features = await inference_service.extract_features(image_data)
-    except Exception as e:
+    except Exception:
         features = {
             "scene_type": "other",
             "main_subject": "unclear",

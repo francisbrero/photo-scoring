@@ -2,7 +2,7 @@
 description: Step-by-step guide to run the test suite for both CLI and cloud packages
 globs:
   - "tests/**/*.py"
-  - "packages/cloud/tests/**/*.py"
+  - "packages/api/tests/**/*.py"
 alwaysApply: false
 ---
 
@@ -13,7 +13,7 @@ alwaysApply: false
 | Package | Command | Requirements |
 |---------|---------|--------------|
 | CLI (photo_score) | `uv run pytest -v` | None |
-| Cloud (packages/cloud) | `uv run pytest tests/ -v` | Local Supabase |
+| Cloud (packages/api) | `uv run pytest tests/ -v` | Local Supabase |
 
 ---
 
@@ -44,7 +44,7 @@ uv run pytest --cov=photo_score --cov-report=term-missing -v
 
 2. **Navigate to cloud package**:
    ```bash
-   cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+   cd /Users/francis/Documents/MadKudu/photo-scoring/packages/api
    ```
 
 ### Run All Tests
@@ -130,7 +130,7 @@ supabase db reset  # WARNING: Deletes all data
 
 ## Full Documentation
 
-See `packages/cloud/TESTING.md` for:
+See `packages/api/TESTING.md` for:
 - Writing new tests
 - Fixture reference
 - Cost considerations

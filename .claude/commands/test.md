@@ -47,25 +47,25 @@ uv run pytest --cov=photo_score --cov-report=term-missing -v $ARGUMENTS
 
 ### Cloud Tests (all)
 ```bash
-cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+cd /Users/francis/Documents/MadKudu/photo-scoring/packages/api
 uv run pytest tests/ --cov=api --cov-report=term-missing -v
 ```
 
 ### Cloud Unit Tests (no Supabase)
 ```bash
-cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+cd /Users/francis/Documents/MadKudu/photo-scoring/packages/api
 uv run pytest tests/ -v --ignore=tests/test_integration.py --ignore=tests/test_e2e_user_journey.py
 ```
 
 ### Cloud Integration Tests
 ```bash
-cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+cd /Users/francis/Documents/MadKudu/photo-scoring/packages/api
 uv run pytest tests/test_integration.py -v
 ```
 
 ### Cloud E2E Tests
 ```bash
-cd /Users/francis/Documents/MadKudu/photo-scoring/packages/cloud
+cd /Users/francis/Documents/MadKudu/photo-scoring/packages/api
 uv run pytest tests/test_e2e_user_journey.py -v
 ```
 
@@ -82,4 +82,4 @@ uv run pytest tests/test_e2e_user_journey.py -v
 
 - **Cloud integration tests automatically skip** if Supabase is not running
 - **Never call OpenRouter in tests** - always mock AI services
-- See `packages/cloud/TESTING.md` for full testing documentation
+- See `packages/api/TESTING.md` for full testing documentation

@@ -12,12 +12,12 @@ function getAppPath(): string {
 
   // Check for packaged app first
   if (platform === 'darwin') {
-    const macAppPath = path.join(releaseDir, 'mac-arm64', 'Photo Scoring.app', 'Contents', 'MacOS', 'Photo Scoring');
+    const macAppPath = path.join(releaseDir, 'mac-arm64', 'Photo Scorer.app', 'Contents', 'MacOS', 'Photo Scorer');
     if (fs.existsSync(macAppPath)) {
       return macAppPath;
     }
   } else if (platform === 'win32') {
-    const winAppPath = path.join(releaseDir, 'win-unpacked', 'Photo Scoring.exe');
+    const winAppPath = path.join(releaseDir, 'win-unpacked', 'Photo Scorer.exe');
     if (fs.existsSync(winAppPath)) {
       return winAppPath;
     }
@@ -32,7 +32,7 @@ function getAppPath(): string {
   return path.join(__dirname, '..');
 }
 
-test.describe('Photo Scoring Desktop App', () => {
+test.describe('Photo Scorer Desktop App', () => {
   test.beforeAll(async () => {
     const appPath = getAppPath();
     console.log(`Starting app from: ${appPath}`);
@@ -68,7 +68,7 @@ test.describe('Photo Scoring Desktop App', () => {
 
   test('should launch the app and show main window', async () => {
     const title = await window.title();
-    expect(title).toContain('Photo Scoring');
+    expect(title).toContain('Photo Scorer');
   });
 
   test('should have sidecar running and healthy', async () => {

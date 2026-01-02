@@ -2,8 +2,8 @@
  * @type {import('electron-builder').Configuration}
  */
 module.exports = {
-  appId: 'com.photoscoring.desktop',
-  productName: 'Photo Scoring',
+  appId: 'com.photoscorer.desktop',
+  productName: 'Photo Scorer',
   directories: {
     output: 'release',
     buildResources: 'resources',

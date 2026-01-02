@@ -175,12 +175,12 @@ photo_score/
     └── personality.py  # Aggregate pattern analysis (new)
 ```
 
-### Cloud Backend (`packages/cloud/`)
+### Cloud Backend (`packages/api/`)
 
 FastAPI application deployed on Railway:
 
 ```
-packages/cloud/
+packages/api/
 ├── api/
 │   ├── main.py              # FastAPI app
 │   ├── routers/

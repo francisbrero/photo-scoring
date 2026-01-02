@@ -146,47 +146,85 @@ export async function getCachedScores(imagePaths: string[]): Promise<Record<stri
   return data.scores;
 }
 
-// Settings API
+// Auth API
 
-export interface ApiKeyStatus {
-  is_set: boolean;
-  masked_key: string | null;
+export interface AuthStatus {
+  authenticated: boolean;
+  user_email: string | null;
+  credits: number | null;
 }
 
-export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
+export interface AuthResponse {
+  authenticated: boolean;
+  user_email: string;
+  credits: number;
+  message: string;
+}
+
+export async function getAuthStatus(): Promise<AuthStatus> {
   const baseUrl = await getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/settings/api-key`);
+  const response = await fetch(`${baseUrl}/api/auth/status`);
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to get API key status');
+    throw new Error(error.detail || 'Failed to get auth status');
   }
 
   return response.json();
 }
 
-export async function setApiKey(apiKey: string): Promise<void> {
+export async function login(email: string, password: string): Promise<AuthResponse> {
   const baseUrl = await getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/settings/api-key`, {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey }),
+    body: JSON.stringify({ email, password }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to set API key');
+    throw new Error(error.detail || 'Login failed');
+  }
+
+  return response.json();
+}
+
+export async function signup(email: string, password: string): Promise<AuthResponse> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Signup failed');
+  }
+
+  return response.json();
+}
+
+export async function logout(): Promise<void> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Logout failed');
   }
 }
 
-export async function deleteApiKey(): Promise<void> {
+export async function getCredits(): Promise<{ credits: number; cached?: boolean }> {
   const baseUrl = await getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/settings/api-key`, {
-    method: 'DELETE',
-  });
+  const response = await fetch(`${baseUrl}/api/auth/credits`);
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to delete API key');
+    throw new Error(error.detail || 'Failed to get credits');
   }
+
+  return response.json();
 }

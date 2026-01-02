@@ -5,7 +5,7 @@ services:
   - type: web
     name: photo-score-api
     runtime: docker
-    rootDir: packages/cloud
+    rootDir: packages/api
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /health
