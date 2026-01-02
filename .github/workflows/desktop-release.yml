@@ -143,17 +143,45 @@ jobs:
             exit 1
           fi
 
-          # Launch the app in background
-          echo "Launching app..."
-          open "$APP_PATH" &
-          APP_PID=$!
+          # Check sidecar is bundled correctly
+          SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecar/sidecar"
+          echo "Checking sidecar at: $SIDECAR_PATH"
+          if [ -f "$SIDECAR_PATH" ]; then
+            echo "Sidecar executable found"
+            ls -la "$SIDECAR_PATH"
+          else
+            echo "ERROR: Sidecar executable NOT found!"
+            echo "Contents of Resources:"
+            ls -la "$APP_PATH/Contents/Resources/" || true
+            echo "Contents of sidecar dir (if exists):"
+            ls -la "$APP_PATH/Contents/Resources/sidecar/" || true
+            exit 1
+          fi
 
-          # Wait for sidecar to be healthy (check multiple ports since it uses dynamic port)
+          # Test sidecar can run standalone
+          echo "Testing sidecar standalone..."
+          "$SIDECAR_PATH" --port 9999 --host 127.0.0.1 &
+          SIDECAR_PID=$!
+          sleep 5
+
+          if curl -s "http://127.0.0.1:9999/health" 2>/dev/null | grep -q "healthy"; then
+            echo "Sidecar standalone test PASSED"
+            kill $SIDECAR_PID 2>/dev/null || true
+          else
+            echo "Sidecar standalone test FAILED"
+            kill $SIDECAR_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          # Now test full app launch
+          echo "Launching full app..."
+          open "$APP_PATH" &
+
+          # Wait for sidecar to be healthy
           echo "Waiting for sidecar health check..."
           HEALTHY=false
           for i in {1..30}; do
-            # Check common port range for dynamic ports
-            for port in $(lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -E ':(9[0-9]{3}|[1-5][0-9]{4})' | awk '{print $9}' | cut -d: -f2 | sort -u); do
+            for port in $(lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -oE '127\.0\.0\.1:[0-9]+' | cut -d: -f2 | sort -u); do
               if curl -s "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "healthy"; then
                 echo "Sidecar healthy on port $port"
                 HEALTHY=true
@@ -167,11 +195,15 @@ jobs:
           # Kill the app
           echo "Stopping app..."
           pkill -f "Photo Scoring" || true
+          pkill -f "sidecar" || true
 
           if [ "$HEALTHY" = true ]; then
             echo "Smoke test PASSED"
           else
             echo "Smoke test FAILED - sidecar did not become healthy"
+            # Show what processes are running
+            echo "Running processes:"
+            ps aux | grep -E "(Photo|sidecar|Electron)" || true
             exit 1
           fi
 
@@ -184,6 +216,40 @@ jobs:
           # Install xvfb for headless display
           sudo apt-get update
           sudo apt-get install -y xvfb
+
+          # Check sidecar-dist was created
+          echo "Checking sidecar-dist contents..."
+          ls -la sidecar-dist/ || echo "sidecar-dist not found"
+          if [ -f "sidecar-dist/sidecar" ]; then
+            echo "Sidecar executable found in sidecar-dist"
+          else
+            echo "ERROR: Sidecar not in sidecar-dist!"
+          fi
+
+          # Check linux-unpacked for sidecar
+          echo "Checking linux-unpacked resources..."
+          ls -la release/linux-unpacked/resources/ || true
+          ls -la release/linux-unpacked/resources/sidecar/ || true
+
+          # Test sidecar standalone from unpacked dir
+          SIDECAR_PATH="release/linux-unpacked/resources/sidecar/sidecar"
+          if [ -f "$SIDECAR_PATH" ]; then
+            echo "Testing sidecar standalone..."
+            chmod +x "$SIDECAR_PATH"
+            "$SIDECAR_PATH" --port 9999 --host 127.0.0.1 &
+            SIDECAR_PID=$!
+            sleep 5
+
+            if curl -s "http://127.0.0.1:9999/health" 2>/dev/null | grep -q "healthy"; then
+              echo "Sidecar standalone test PASSED"
+              kill $SIDECAR_PID 2>/dev/null || true
+            else
+              echo "Sidecar standalone test FAILED"
+              kill $SIDECAR_PID 2>/dev/null || true
+            fi
+          else
+            echo "Sidecar executable not found at $SIDECAR_PATH"
+          fi
 
           # Find the AppImage
           APPIMAGE=$(find release -name "*.AppImage" | head -1)
@@ -221,11 +287,14 @@ jobs:
           kill $APP_PID 2>/dev/null || true
           pkill -f "photo-scoring" || true
           pkill -f "AppImage" || true
+          pkill -f "sidecar" || true
 
           if [ "$HEALTHY" = true ]; then
             echo "Smoke test PASSED"
           else
             echo "Smoke test FAILED - sidecar did not become healthy"
+            echo "Running processes:"
+            ps aux | grep -E "(Photo|sidecar|Electron|AppImage)" || true
             exit 1
           fi
 
