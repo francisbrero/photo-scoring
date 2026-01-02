@@ -1,0 +1,9 @@
+# App icons for Electron builds
+#
+# Generated placeholder icons included:
+# - icon.icns (macOS)
+# - icon.ico (Windows)
+# - icon.png (512x512 base)
+# - icons/ (multiple sizes for Linux)
+#
+# For production, replace with professionally designed icons.

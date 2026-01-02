@@ -15,6 +15,7 @@ import { Upload } from './pages/Upload';
 import { Pricing } from './pages/Pricing';
 import { About } from './pages/About';
 import { Contact } from './pages/Contact';
+import { Downloads } from './pages/Downloads';
 
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -31,6 +32,7 @@ function AppContent() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/downloads" element={<Downloads />} />
 
         {/* Protected Routes */}
         <Route
