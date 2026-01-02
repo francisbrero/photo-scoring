@@ -128,6 +128,164 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Smoke tests - verify the app launches and sidecar starts
+      - name: Smoke test (macOS)
+        if: matrix.platform == 'mac'
+        working-directory: packages/desktop
+        run: |
+          echo "Starting smoke test for macOS..."
+
+          # Find the app bundle
+          APP_PATH="release/mac-arm64/Photo Scoring.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: App not found at $APP_PATH"
+            ls -la release/
+            exit 1
+          fi
+
+          # Launch the app in background
+          echo "Launching app..."
+          open "$APP_PATH" &
+          APP_PID=$!
+
+          # Wait for sidecar to be healthy (check multiple ports since it uses dynamic port)
+          echo "Waiting for sidecar health check..."
+          HEALTHY=false
+          for i in {1..30}; do
+            # Check common port range for dynamic ports
+            for port in $(lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | grep -E ':(9[0-9]{3}|[1-5][0-9]{4})' | awk '{print $9}' | cut -d: -f2 | sort -u); do
+              if curl -s "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "healthy"; then
+                echo "Sidecar healthy on port $port"
+                HEALTHY=true
+                break 2
+              fi
+            done
+            echo "Attempt $i: Waiting for sidecar..."
+            sleep 2
+          done
+
+          # Kill the app
+          echo "Stopping app..."
+          pkill -f "Photo Scoring" || true
+
+          if [ "$HEALTHY" = true ]; then
+            echo "Smoke test PASSED"
+          else
+            echo "Smoke test FAILED - sidecar did not become healthy"
+            exit 1
+          fi
+
+      - name: Smoke test (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: packages/desktop
+        run: |
+          echo "Starting smoke test for Linux..."
+
+          # Install xvfb for headless display
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+          # Find the AppImage
+          APPIMAGE=$(find release -name "*.AppImage" | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "Error: AppImage not found"
+            ls -la release/
+            exit 1
+          fi
+
+          # Make executable
+          chmod +x "$APPIMAGE"
+
+          # Launch with xvfb
+          echo "Launching app with xvfb..."
+          xvfb-run --auto-servernum "$APPIMAGE" --no-sandbox &
+          APP_PID=$!
+
+          # Wait for sidecar to be healthy
+          echo "Waiting for sidecar health check..."
+          HEALTHY=false
+          for i in {1..30}; do
+            for port in $(ss -tlnp 2>/dev/null | grep -oE ':[0-9]+' | cut -d: -f2 | sort -u); do
+              if curl -s "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "healthy"; then
+                echo "Sidecar healthy on port $port"
+                HEALTHY=true
+                break 2
+              fi
+            done
+            echo "Attempt $i: Waiting for sidecar..."
+            sleep 2
+          done
+
+          # Kill the app
+          echo "Stopping app..."
+          kill $APP_PID 2>/dev/null || true
+          pkill -f "photo-scoring" || true
+          pkill -f "AppImage" || true
+
+          if [ "$HEALTHY" = true ]; then
+            echo "Smoke test PASSED"
+          else
+            echo "Smoke test FAILED - sidecar did not become healthy"
+            exit 1
+          fi
+
+      - name: Smoke test (Windows)
+        if: matrix.platform == 'win'
+        working-directory: packages/desktop
+        shell: pwsh
+        run: |
+          Write-Host "Starting smoke test for Windows..."
+
+          # Find the unpacked app (faster than running installer)
+          $appPath = "release\win-unpacked\Photo Scoring.exe"
+          if (-not (Test-Path $appPath)) {
+            Write-Host "Error: App not found at $appPath"
+            Get-ChildItem release\ -Recurse
+            exit 1
+          }
+
+          # Launch the app
+          Write-Host "Launching app..."
+          $process = Start-Process -FilePath $appPath -PassThru
+
+          # Wait for sidecar to be healthy
+          Write-Host "Waiting for sidecar health check..."
+          $healthy = $false
+          for ($i = 1; $i -le 30; $i++) {
+            # Check ports in typical range
+            $ports = netstat -ano | Select-String "LISTENING" | ForEach-Object {
+              if ($_ -match ':(\d+)\s') { $matches[1] }
+            } | Sort-Object -Unique
+
+            foreach ($port in $ports) {
+              try {
+                $response = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+                if ($response.status -eq "healthy") {
+                  Write-Host "Sidecar healthy on port $port"
+                  $healthy = $true
+                  break
+                }
+              } catch {
+                # Port not responding, continue
+              }
+            }
+            if ($healthy) { break }
+            Write-Host "Attempt $i`: Waiting for sidecar..."
+            Start-Sleep -Seconds 2
+          }
+
+          # Kill the app
+          Write-Host "Stopping app..."
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          Get-Process | Where-Object { $_.ProcessName -like "*Photo*" -or $_.ProcessName -like "*sidecar*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if ($healthy) {
+            Write-Host "Smoke test PASSED"
+          } else {
+            Write-Host "Smoke test FAILED - sidecar did not become healthy"
+            exit 1
+          }
+
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'mac'
         uses: actions/upload-artifact@v4
