@@ -1,6 +1,6 @@
 {
   "name": "photo-scoring-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Photo Scoring Desktop App - Electron + React + Python Sidecar",
   "author": "Francis Brero",
