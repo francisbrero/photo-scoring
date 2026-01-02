@@ -145,3 +145,48 @@ export async function getCachedScores(imagePaths: string[]): Promise<Record<stri
   const data = await response.json();
   return data.scores;
 }
+
+// Settings API
+
+export interface ApiKeyStatus {
+  is_set: boolean;
+  masked_key: string | null;
+}
+
+export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/settings/api-key`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get API key status');
+  }
+
+  return response.json();
+}
+
+export async function setApiKey(apiKey: string): Promise<void> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/settings/api-key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to set API key');
+  }
+}
+
+export async function deleteApiKey(): Promise<void> {
+  const baseUrl = await getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/settings/api-key`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete API key');
+  }
+}

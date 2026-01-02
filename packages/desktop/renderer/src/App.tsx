@@ -3,13 +3,16 @@ import { Layout } from './components/Layout';
 import { PhotoGrid } from './components/PhotoBrowser';
 import { ScoreViewer } from './components/ScoreViewer';
 import { FolderLibrary } from './components/FolderLibrary';
+import { Settings } from './components/Settings';
 import { usePhotos } from './hooks/usePhotos';
-import { checkHealth } from './services/sidecar';
+import { checkHealth, getApiKeyStatus } from './services/sidecar';
 import type { PhotoWithScore } from './types/photo';
 
 function App() {
   const [sidecarReady, setSidecarReady] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithScore | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean | null>(null);
   const {
     photos,
     isLoading,
@@ -25,16 +28,36 @@ function App() {
     removeFromLibrary,
   } = usePhotos();
 
-  // Check sidecar health on mount
+  // Check sidecar health and API key status on mount
   useEffect(() => {
     const checkSidecar = async () => {
       const healthy = await checkHealth();
       setSidecarReady(healthy);
+
+      if (healthy) {
+        try {
+          const status = await getApiKeyStatus();
+          setApiKeyConfigured(status.is_set);
+        } catch {
+          setApiKeyConfigured(false);
+        }
+      }
     };
 
     checkSidecar();
     const interval = setInterval(checkSidecar, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Refresh API key status when settings is closed
+  const handleSettingsClose = useCallback(async () => {
+    setShowSettings(false);
+    try {
+      const status = await getApiKeyStatus();
+      setApiKeyConfigured(status.is_set);
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Auto-load last directory when sidecar is ready
@@ -69,7 +92,7 @@ function App() {
   const scoredCount = photos.length - unscoredCount;
 
   return (
-    <Layout>
+    <Layout onSettingsClick={() => setShowSettings(true)}>
       {!sidecarReady ? (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
@@ -144,6 +167,19 @@ function App() {
                   </div>
                 </div>
 
+                {/* API Key warning */}
+                {apiKeyConfigured === false && (
+                  <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-2 text-sm flex items-center justify-between">
+                    <span>OPENROUTER_API_KEY not set. Please configure your API key.</span>
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-medium"
+                    >
+                      Configure
+                    </button>
+                  </div>
+                )}
+
                 {/* Error message */}
                 {error && (
                   <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-2 text-sm">
@@ -181,6 +217,9 @@ function App() {
           onScore={() => scorePhoto(selectedPhoto.image_id)}
         />
       )}
+
+      {/* Settings modal */}
+      {showSettings && <Settings onClose={handleSettingsClose} />}
     </Layout>
   );
 }

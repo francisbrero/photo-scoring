@@ -28,6 +28,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from handlers.photos import router as photos_router
 from handlers.inference import router as inference_router
 from handlers.sync import router as sync_router
+from handlers.settings import router as settings_router, load_api_key_to_env
+
+# Load API key from settings file on startup
+load_api_key_to_env()
 
 app = FastAPI(
     title="Photo Scoring Sidecar",
@@ -48,6 +52,7 @@ app.add_middleware(
 app.include_router(photos_router, prefix="/api/photos", tags=["photos"])
 app.include_router(inference_router, prefix="/api/inference", tags=["inference"])
 app.include_router(sync_router, prefix="/api/sync", tags=["sync"])
+app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 
 
 @app.get("/health")
