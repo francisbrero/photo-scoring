@@ -67,8 +67,8 @@ jobs:
         if: matrix.platform != 'win'
         working-directory: packages/desktop/sidecar
         run: |
-          # Install photo_score dependencies in the sidecar venv
-          uv pip install httpx pyyaml
+          # Install the main photo_score package with all its dependencies
+          uv pip install -e ../../../
 
           uv run python -m PyInstaller --onedir --name sidecar \
             --hidden-import uvicorn.logging \
@@ -81,12 +81,7 @@ jobs:
             --hidden-import uvicorn.protocols.websockets.auto \
             --hidden-import uvicorn.lifespan \
             --hidden-import uvicorn.lifespan.on \
-            --hidden-import httpx \
-            --hidden-import yaml \
-            --hidden-import pydantic \
-            --hidden-import PIL \
             --collect-all photo_score \
-            --add-data "../../../photo_score:photo_score" \
             --add-data "../../../configs:configs" \
             server.py
           mkdir -p ../sidecar-dist
@@ -97,8 +92,8 @@ jobs:
         working-directory: packages/desktop/sidecar
         shell: pwsh
         run: |
-          # Install photo_score dependencies in the sidecar venv
-          uv pip install httpx pyyaml
+          # Install the main photo_score package with all its dependencies
+          uv pip install -e ../../../
 
           uv run python -m PyInstaller --onedir --name sidecar `
             --hidden-import uvicorn.logging `
@@ -111,12 +106,7 @@ jobs:
             --hidden-import uvicorn.protocols.websockets.auto `
             --hidden-import uvicorn.lifespan `
             --hidden-import uvicorn.lifespan.on `
-            --hidden-import httpx `
-            --hidden-import yaml `
-            --hidden-import pydantic `
-            --hidden-import PIL `
             --collect-all photo_score `
-            --add-data "../../../photo_score;photo_score" `
             --add-data "../../../configs;configs" `
             server.py
           New-Item -ItemType Directory -Force -Path ../sidecar-dist
