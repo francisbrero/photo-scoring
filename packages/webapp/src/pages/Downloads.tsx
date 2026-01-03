@@ -265,8 +265,52 @@ export function Downloads() {
           ))}
         </div>
 
-        {/* System Requirements */}
+        {/* Installation Instructions */}
         <div className="mt-12 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] p-6">
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Installation Instructions</h3>
+          <div className="grid sm:grid-cols-3 gap-6 mb-6">
+            <div>
+              <h4 className="font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                {PLATFORM_INFO.mac.icon}
+                <span>macOS</span>
+              </h4>
+              <ol className="text-sm text-[var(--text-secondary)] space-y-2 list-decimal list-inside">
+                <li>Download the .dmg file</li>
+                <li>Open the .dmg and drag to Applications</li>
+                <li>Right-click the app and select "Open"</li>
+                <li>Click "Open" in the security dialog</li>
+              </ol>
+              <p className="text-xs text-[var(--text-muted)] mt-2">
+                Or run in Terminal: <code className="bg-[var(--bg-tertiary)] px-1 rounded">xattr -cr /Applications/Photo\ Scorer.app</code>
+              </p>
+            </div>
+            <div>
+              <h4 className="font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                {PLATFORM_INFO.windows.icon}
+                <span>Windows</span>
+              </h4>
+              <ol className="text-sm text-[var(--text-secondary)] space-y-2 list-decimal list-inside">
+                <li>Download the .exe installer</li>
+                <li>Run the installer</li>
+                <li>If SmartScreen appears, click "More info" then "Run anyway"</li>
+              </ol>
+            </div>
+            <div>
+              <h4 className="font-medium text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                {PLATFORM_INFO.linux.icon}
+                <span>Linux</span>
+              </h4>
+              <ol className="text-sm text-[var(--text-secondary)] space-y-2 list-decimal list-inside">
+                <li>Download the .AppImage file</li>
+                <li>Make it executable: <code className="bg-[var(--bg-tertiary)] px-1 rounded">chmod +x *.AppImage</code></li>
+                <li>Run the AppImage</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        {/* System Requirements */}
+        <div className="mt-8 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] p-6">
           <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">System Requirements</h3>
           <div className="grid sm:grid-cols-3 gap-6">
             <div>
