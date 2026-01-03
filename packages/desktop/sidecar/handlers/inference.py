@@ -1,10 +1,16 @@
 """Inference and scoring handlers using cloud API."""
 
+import sys
 from pathlib import Path
 from typing import Optional
 
-# Get root path for config files
-ROOT_PATH = Path(__file__).parent.parent.parent.parent.parent
+# Get root path for config files - handle PyInstaller bundle
+if getattr(sys, "frozen", False):
+    # Running as compiled executable
+    ROOT_PATH = Path(sys._MEIPASS)
+else:
+    # Running in development
+    ROOT_PATH = Path(__file__).parent.parent.parent.parent.parent
 DEFAULT_CONFIG = ROOT_PATH / "configs" / "default.yaml"
 
 from fastapi import APIRouter, HTTPException, Query  # noqa: E402
