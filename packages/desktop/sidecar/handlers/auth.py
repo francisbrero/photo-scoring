@@ -180,7 +180,10 @@ async def login(request: LoginRequest):
                     detail="Invalid email or password",
                 )
             else:
-                error_detail = response.json().get("detail", "Login failed")
+                try:
+                    error_detail = response.json().get("detail", "Login failed")
+                except Exception:
+                    error_detail = response.text or "Login failed"
                 raise HTTPException(
                     status_code=response.status_code, detail=error_detail
                 )
@@ -237,10 +240,16 @@ async def signup(request: SignupRequest):
                     )
 
             elif response.status_code == 400:
-                error_detail = response.json().get("detail", "Signup failed")
+                try:
+                    error_detail = response.json().get("detail", "Signup failed")
+                except Exception:
+                    error_detail = response.text or "Signup failed"
                 raise HTTPException(status_code=400, detail=error_detail)
             else:
-                error_detail = response.json().get("detail", "Signup failed")
+                try:
+                    error_detail = response.json().get("detail", "Signup failed")
+                except Exception:
+                    error_detail = response.text or "Signup failed"
                 raise HTTPException(
                     status_code=response.status_code, detail=error_detail
                 )
