@@ -68,3 +68,14 @@ Thumbs.db
 
 # Local Supabase development
 supabase/
+
+# Node.js
+node_modules/
+
+# Electron build output
+release/
+out/
+
+# PyInstaller build output
+sidecar-dist/
+*.spec
