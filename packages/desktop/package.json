@@ -1,6 +1,6 @@
 {
   "name": "photo-scorer-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Photo Scorer Desktop App - Electron + React + Python Sidecar",
   "author": "Francis Brero",
