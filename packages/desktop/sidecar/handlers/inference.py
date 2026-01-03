@@ -156,27 +156,29 @@ async def score_image(request: ScoreRequest):
             try:
                 result = await cloud_score_image(str(file_path), image_id)
 
-                # Extract attributes from cloud response
+                # Extract attributes from cloud response (nested under "attributes")
+                cloud_attrs = result.get("attributes", result)
                 attrs = NormalizedAttributes(
                     image_id=image_id,
-                    composition=result["composition"],
-                    subject_strength=result["subject_strength"],
-                    visual_appeal=result["visual_appeal"],
-                    sharpness=result["sharpness"],
-                    exposure_balance=result["exposure_balance"],
-                    noise_level=result["noise_level"],
-                    model_name="cloud",
-                    model_version="v1",
+                    composition=cloud_attrs["composition"],
+                    subject_strength=cloud_attrs["subject_strength"],
+                    visual_appeal=cloud_attrs["visual_appeal"],
+                    sharpness=cloud_attrs["sharpness"],
+                    exposure_balance=cloud_attrs["exposure_balance"],
+                    noise_level=cloud_attrs["noise_level"],
+                    model_name=cloud_attrs.get("model_name", "cloud"),
+                    model_version=cloud_attrs.get("model_version", "v1"),
                 )
                 cache.store_attributes(attrs)
 
                 # Get credits remaining from response
                 credits_remaining = result.get("credits_remaining")
 
-                # Extract critique from cloud response
-                critique_explanation = result.get("explanation", "")
-                improvements = result.get("improvements", [])
-                description = result.get("description", "")
+                # Extract critique from cloud response (nested under "critique")
+                critique = result.get("critique") or {}
+                critique_explanation = critique.get("explanation", "")
+                improvements = critique.get("improvements", [])
+                description = critique.get("description", "")
 
                 # Cache the critique
                 if critique_explanation or improvements or description:

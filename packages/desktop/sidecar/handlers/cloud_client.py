@@ -44,7 +44,7 @@ def get_auth_token() -> str | None:
 async def score_image(image_path: str, image_hash: str) -> dict:
     """Score an image using the cloud API.
 
-    Uses /api/photos/score-direct for full scoring pipeline including
+    Uses /api/inference/analyze for full scoring pipeline including
     attributes, features, critique, and metadata.
 
     Args:
@@ -53,9 +53,9 @@ async def score_image(image_path: str, image_hash: str) -> dict:
 
     Returns:
         Dictionary with full scoring results:
-        - image_hash, final_score, aesthetic_score, technical_score
-        - composition, subject_strength, visual_appeal, sharpness, exposure_balance, noise_level
-        - explanation, improvements, description
+        - attributes (composition, subject_strength, etc.)
+        - scores (final_score, aesthetic_score, technical_score)
+        - critique (explanation, improvements, description)
         - credits_remaining, cached
 
     Raises:
@@ -75,7 +75,7 @@ async def score_image(image_path: str, image_hash: str) -> dict:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{CLOUD_API_URL}/api/photos/score-direct",
+                f"{CLOUD_API_URL}/api/inference/analyze",
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
