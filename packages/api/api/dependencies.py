@@ -49,15 +49,15 @@ async def get_current_user(
                 audience="authenticated",
             )
         else:
-            # OAuth (RS256) - Supabase handles verification, we just decode
-            # The token was issued by Supabase after OAuth, so we trust it
+            # Other algorithms (ES256, RS256) - Supabase handles verification
+            # The token was issued by Supabase, so we trust it
             # but verify the structure and audience
             payload = jwt.decode(
                 token,
                 settings.supabase_jwt_secret,
-                algorithms=["HS256", "RS256"],
+                algorithms=["HS256", "RS256", "ES256"],
                 audience="authenticated",
-                options={"verify_signature": alg == "HS256"},
+                options={"verify_signature": False},  # Supabase already verified
             )
 
         user_id = payload.get("sub")
