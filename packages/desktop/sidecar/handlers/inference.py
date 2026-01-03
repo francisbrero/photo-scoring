@@ -174,6 +174,22 @@ async def score_image(request: ScoreRequest):
                 # Get credits remaining from response
                 credits_remaining = result.get("credits_remaining")
 
+                # Extract critique from cloud response
+                cloud_critique = result.get("critique")
+                if cloud_critique:
+                    critique_explanation = cloud_critique.get("explanation", "")
+                    improvements = cloud_critique.get("improvements", [])
+                    description = cloud_critique.get("description", "")
+                    # Cache the critique
+                    cache.store_critique(
+                        image_id,
+                        {
+                            "explanation": critique_explanation,
+                            "improvements": improvements,
+                            "description": description,
+                        },
+                    )
+
             except AuthenticationError as e:
                 raise HTTPException(status_code=401, detail=e.message)
             except InsufficientCreditsError as e:

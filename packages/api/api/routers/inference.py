@@ -65,11 +65,20 @@ class ScoresResponse(BaseModel):
     final_score: float
 
 
+class CritiqueResponse(BaseModel):
+    """Critique and recommendations from AI analysis."""
+
+    explanation: str = ""
+    improvements: list[str] = []
+    description: str = ""
+
+
 class AnalyzeResponse(BaseModel):
     """Response from image analysis."""
 
     attributes: AttributesResponse
     scores: ScoresResponse
+    critique: CritiqueResponse | None = None
     credits_remaining: int
     cached: bool = Field(
         False, description="Whether result was retrieved from cache (no credit charged)"
@@ -132,7 +141,7 @@ async def analyze_image(
     # Check cache first
     cache_result = (
         supabase.table("inference_cache")
-        .select("attributes")
+        .select("attributes, critique")
         .eq("user_id", user.id)
         .eq("image_hash", image_hash)
         .execute()
@@ -142,13 +151,20 @@ async def analyze_image(
 
     if cache_result.data:
         # Return cached result (free)
-        cached_attrs = cache_result.data[0]["attributes"]
+        cached_data = cache_result.data[0]
+        cached_attrs = cached_data["attributes"]
         scores = service.compute_scores(cached_attrs)
         balance = await credit_service.get_balance(user.id)
+
+        # Get cached critique if available
+        cached_critique = None
+        if cached_data.get("critique"):
+            cached_critique = CritiqueResponse(**cached_data["critique"])
 
         return AnalyzeResponse(
             attributes=AttributesResponse(**cached_attrs),
             scores=ScoresResponse(**scores),
+            critique=cached_critique,
             credits_remaining=balance,
             cached=True,
         )
@@ -183,25 +199,67 @@ async def analyze_image(
         )
         raise HTTPException(status_code=status_code, detail=e.message) from e
 
-    # Cache the result
+    # Compute scores
+    scores = service.compute_scores(attributes)
+
+    # Generate critique (best effort - don't fail if it fails)
+    critique_data = None
     try:
-        supabase.table("inference_cache").insert(
-            {
-                "user_id": user.id,
-                "image_hash": image_hash,
-                "attributes": attributes,
-            }
-        ).execute()
+        # Extract features for context
+        features = await service.extract_features(image_data)
+
+        # Generate critique
+        critique = await service.generate_critique(
+            image_data, features, attributes, scores["final_score"]
+        )
+
+        # Format the critique
+        explanation = service.format_explanation(critique)
+        improvements = critique.get("could_improve", [])
+        if critique.get("key_recommendation"):
+            improvements.append(critique["key_recommendation"])
+
+        # Get description from metadata (cheaper call)
+        try:
+            metadata = await service.analyze_image_metadata(image_data, image_hash)
+            description = metadata.get("description", "")
+        except Exception:
+            description = ""
+
+        critique_data = CritiqueResponse(
+            explanation=explanation,
+            improvements=improvements,
+            description=description,
+        )
+    except Exception as e:
+        # Log but don't fail - critique is optional enhancement
+        import logging
+
+        logging.warning(f"Critique generation failed: {e}")
+
+    # Cache the result (including critique if available)
+    cache_data = {
+        "user_id": user.id,
+        "image_hash": image_hash,
+        "attributes": attributes,
+    }
+    if critique_data:
+        cache_data["critique"] = {
+            "explanation": critique_data.explanation,
+            "improvements": critique_data.improvements,
+            "description": critique_data.description,
+        }
+
+    try:
+        supabase.table("inference_cache").insert(cache_data).execute()
     except Exception:
         # Don't fail if caching fails, just log
         pass
 
-    # Compute scores
-    scores = service.compute_scores(attributes)
-
     return AnalyzeResponse(
         attributes=AttributesResponse(**attributes),
         scores=ScoresResponse(**scores),
+        critique=critique_data,
         credits_remaining=new_balance,
         cached=False,
     )
