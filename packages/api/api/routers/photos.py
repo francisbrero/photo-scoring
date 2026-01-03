@@ -429,6 +429,9 @@ async def upload_photo(
     /photos/{id}/score endpoint.
 
     HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
+
+    If the same image (by content hash) has already been uploaded by this user,
+    returns the existing photo instead of creating a duplicate.
     """
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"]
@@ -485,6 +488,27 @@ async def upload_photo(
                 detail=f"Failed to process HEIC image: {str(e)}",
             ) from e
 
+    # Compute image hash for deduplication
+    image_hash = hashlib.sha256(content).hexdigest()
+
+    # Check if this image already exists for this user
+    existing = (
+        supabase.table("scored_photos")
+        .select("id, storage_path")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    if existing.data:
+        # Return existing photo instead of creating duplicate
+        existing_photo = existing.data[0]
+        return UploadResponse(
+            id=existing_photo["id"],
+            storage_path=existing_photo["storage_path"],
+            message="Photo already exists. Returning existing photo.",
+        )
+
     # Generate unique filename
     unique_id = str(uuid.uuid4())
     storage_path = f"{user.id}/{unique_id}.{file_ext}"
@@ -502,7 +526,7 @@ async def upload_photo(
             detail=f"Failed to upload file: {str(e)}",
         ) from e
 
-    # Create database record
+    # Create database record with image hash
     photo_id = unique_id
     try:
         supabase.table("scored_photos").insert(
@@ -511,6 +535,7 @@ async def upload_photo(
                 "user_id": user.id,
                 "storage_path": storage_path,
                 "original_filename": file.filename,
+                "image_hash": image_hash,
             }
         ).execute()
     except Exception as e:
