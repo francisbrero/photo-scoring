@@ -112,7 +112,7 @@ export function Downloads() {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-[var(--text-primary)] mb-4">
-            Download Photo Scoring
+            Download Photo Scorer
           </h1>
           <p className="text-xl text-[var(--text-secondary)] max-w-2xl mx-auto">
             Score your photos offline with our desktop app. No internet required after installation.
@@ -174,7 +174,7 @@ export function Downloads() {
               <div className="flex flex-col sm:flex-row items-center gap-6">
                 <div className="flex-1 text-center sm:text-left">
                   <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
-                    Photo Scoring for {PLATFORM_INFO[selectedPlatform].name}
+                    Photo Scorer for {PLATFORM_INFO[selectedPlatform].name}
                   </h2>
                   <p className="text-[var(--text-secondary)] mb-4">
                     Version {release.tag_name.replace('v', '')} &bull; Released {formatDate(release.published_at)}
