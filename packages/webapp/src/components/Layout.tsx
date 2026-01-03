@@ -49,14 +49,19 @@ export function Layout({
 
   const isActive = (path: string) => location.pathname === path;
 
-  // For home page, show floating header when scrolled
+  // For home page, show transparent header at top, solid when scrolled
   const headerClasses = isHomePage
     ? `fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         scrolled
-          ? 'bg-[var(--bg-secondary)]/95 backdrop-blur-sm border-b border-[var(--border-color)] translate-y-0'
-          : '-translate-y-full'
+          ? 'bg-[var(--bg-secondary)]/95 backdrop-blur-sm border-b border-[var(--border-color)]'
+          : 'bg-transparent'
       }`
     : 'bg-[var(--bg-secondary)] border-b border-[var(--border-color)] sticky top-0 z-50';
+
+  // On home page when not scrolled, use white text for visibility over hero image
+  const homeTransparentText = isHomePage && !scrolled;
+  const textPrimaryClass = homeTransparentText ? 'text-white' : 'text-[var(--text-primary)]';
+  const textMutedClass = homeTransparentText ? 'text-white/60' : 'text-[var(--text-muted)]';
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -68,8 +73,8 @@ export function Layout({
             <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <span className="text-2xl">📸</span>
               <div>
-                <h1 className="text-xl font-bold">Photo Scorer</h1>
-                <p className="text-xs text-[var(--text-muted)]">AI-powered photo analysis</p>
+                <h1 className={`text-xl font-bold ${textPrimaryClass} transition-colors`}>Photo Scorer</h1>
+                <p className={`text-xs ${textMutedClass} transition-colors`}>AI-powered photo analysis</p>
               </div>
             </Link>
 
@@ -80,8 +85,12 @@ export function Layout({
                 to="/downloads"
                 className={`px-3 py-2 rounded-lg transition-colors ${
                   isActive('/downloads')
-                    ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    ? homeTransparentText
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                    : homeTransparentText
+                      ? 'text-white/80 hover:text-white'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 Downloads
@@ -108,8 +117,12 @@ export function Layout({
                     to="/dashboard"
                     className={`px-3 py-2 rounded-lg transition-colors ${
                       isActive('/dashboard')
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        ? homeTransparentText
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                        : homeTransparentText
+                          ? 'text-white/80 hover:text-white'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
                     Dashboard
@@ -118,8 +131,12 @@ export function Layout({
                     to="/upload"
                     className={`px-3 py-2 rounded-lg transition-colors ${
                       isActive('/upload')
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        ? homeTransparentText
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                        : homeTransparentText
+                          ? 'text-white/80 hover:text-white'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
                     Upload
@@ -135,13 +152,17 @@ export function Layout({
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-tertiary)] hover:opacity-80 transition-opacity"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-all ${
+                      homeTransparentText
+                        ? 'bg-white/20 backdrop-blur-sm'
+                        : 'bg-[var(--bg-tertiary)]'
+                    }`}
                   >
                     <div className="w-8 h-8 rounded-full bg-[#e94560] flex items-center justify-center text-white font-medium">
                       {user.email?.[0].toUpperCase() || 'U'}
                     </div>
                     <svg
-                      className="w-4 h-4 text-[var(--text-muted)]"
+                      className={`w-4 h-4 transition-colors ${textMutedClass}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -192,7 +213,11 @@ export function Layout({
                 <div className="flex items-center gap-3">
                   <Link
                     to="/login"
-                    className="px-4 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    className={`px-4 py-2 transition-colors ${
+                      homeTransparentText
+                        ? 'text-white/80 hover:text-white'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
                   >
                     Sign In
                   </Link>
