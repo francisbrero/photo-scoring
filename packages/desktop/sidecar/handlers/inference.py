@@ -24,7 +24,7 @@ from photo_score.scoring.reducer import ScoringReducer  # noqa: E402
 from photo_score.scoring.explanations import ExplanationGenerator  # noqa: E402
 
 from .cloud_client import (  # noqa: E402
-    analyze_image as cloud_analyze_image,
+    score_image as cloud_score_image,
     CloudInferenceError,
     InsufficientCreditsError,
     AuthenticationError,
@@ -152,22 +152,21 @@ async def score_image(request: ScoreRequest):
         description = ""
 
         if attrs is None:
-            # Need to run inference via cloud API
+            # Need to run scoring via cloud API
             try:
-                result = await cloud_analyze_image(str(file_path), image_id)
+                result = await cloud_score_image(str(file_path), image_id)
 
                 # Extract attributes from cloud response
-                cloud_attrs = result["attributes"]
                 attrs = NormalizedAttributes(
                     image_id=image_id,
-                    composition=cloud_attrs["composition"],
-                    subject_strength=cloud_attrs["subject_strength"],
-                    visual_appeal=cloud_attrs["visual_appeal"],
-                    sharpness=cloud_attrs["sharpness"],
-                    exposure_balance=cloud_attrs["exposure_balance"],
-                    noise_level=cloud_attrs["noise_level"],
-                    model_name=cloud_attrs.get("model_name"),
-                    model_version=cloud_attrs.get("model_version"),
+                    composition=result["composition"],
+                    subject_strength=result["subject_strength"],
+                    visual_appeal=result["visual_appeal"],
+                    sharpness=result["sharpness"],
+                    exposure_balance=result["exposure_balance"],
+                    noise_level=result["noise_level"],
+                    model_name="cloud",
+                    model_version="v1",
                 )
                 cache.store_attributes(attrs)
 
@@ -175,12 +174,12 @@ async def score_image(request: ScoreRequest):
                 credits_remaining = result.get("credits_remaining")
 
                 # Extract critique from cloud response
-                cloud_critique = result.get("critique")
-                if cloud_critique:
-                    critique_explanation = cloud_critique.get("explanation", "")
-                    improvements = cloud_critique.get("improvements", [])
-                    description = cloud_critique.get("description", "")
-                    # Cache the critique
+                critique_explanation = result.get("explanation", "")
+                improvements = result.get("improvements", [])
+                description = result.get("description", "")
+
+                # Cache the critique
+                if critique_explanation or improvements or description:
                     cache.store_critique(
                         image_id,
                         {

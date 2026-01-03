@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..dependencies import CurrentUser, SupabaseClient
 from ..services.credits import CreditService, InsufficientCreditsError
@@ -326,6 +326,96 @@ class ScoreResponse(BaseModel):
     credits_remaining: int
 
 
+class ScoreDirectRequest(BaseModel):
+    """Request to score an image without storing it."""
+
+    image_data: str  # Base64-encoded image
+    image_hash: str | None = None  # Optional, computed if not provided
+
+
+class ScoreDirectResponse(BaseModel):
+    """Full scoring response without storage."""
+
+    image_hash: str
+    final_score: float
+    aesthetic_score: float
+    technical_score: float
+    # Individual attributes
+    composition: float
+    subject_strength: float
+    visual_appeal: float
+    sharpness: float
+    exposure_balance: float
+    noise_level: float
+    # Critique and metadata
+    explanation: str
+    improvements: list[str]
+    description: str
+    # Credits
+    credits_remaining: int
+    cached: bool
+
+
+class ScoringWeights(BaseModel):
+    """Custom weights for rescoring photos."""
+
+    # Aesthetic attribute weights (should sum to 1.0)
+    composition: float = Field(default=0.4, ge=0.0, le=1.0)
+    subject_strength: float = Field(default=0.35, ge=0.0, le=1.0)
+    visual_appeal: float = Field(default=0.25, ge=0.0, le=1.0)
+    # Technical attribute weights (should sum to 1.0)
+    sharpness: float = Field(default=0.4, ge=0.0, le=1.0)
+    exposure_balance: float = Field(default=0.35, ge=0.0, le=1.0)
+    noise_level: float = Field(default=0.25, ge=0.0, le=1.0)
+    # Category weights (should sum to 1.0)
+    aesthetic_weight: float = Field(default=0.6, ge=0.0, le=1.0)
+    technical_weight: float = Field(default=0.4, ge=0.0, le=1.0)
+    # Threshold penalties
+    sharpness_threshold: float = Field(default=0.2, ge=0.0, le=1.0)
+    exposure_threshold: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class RescoreRequest(BaseModel):
+    """Request body for rescoring photos."""
+
+    photo_ids: list[str] | None = Field(
+        None, description="List of photo IDs to rescore. If None, rescore all photos."
+    )
+    weights: ScoringWeights = Field(
+        default_factory=ScoringWeights,
+        description="Custom scoring weights. Uses defaults if not provided.",
+    )
+    persist: bool = Field(
+        default=False,
+        description="If true, update stored scores in database.",
+    )
+
+
+class RescoredPhoto(BaseModel):
+    """A photo with recomputed scores."""
+
+    id: str
+    final_score: float
+    aesthetic_score: float
+    technical_score: float
+    # Raw attributes for reference
+    composition: float | None
+    subject_strength: float | None
+    visual_appeal: float | None
+    sharpness: float | None
+    exposure_balance: float | None
+    noise_level: float | None
+
+
+class RescoreResponse(BaseModel):
+    """Response from rescoring operation."""
+
+    photos: list[RescoredPhoto]
+    total_rescored: int
+    skipped: int
+    persisted: bool
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_photo(
     user: CurrentUser,
@@ -438,6 +528,196 @@ async def upload_photo(
         id=photo_id,
         storage_path=storage_path,
         message="Photo uploaded successfully. Use /photos/{id}/score to score it.",
+    )
+
+
+@router.post("/score-direct", response_model=ScoreDirectResponse)
+async def score_direct(
+    request: ScoreDirectRequest,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Score an image directly without storing it.
+
+    This endpoint runs the full scoring pipeline (attributes, features,
+    critique, metadata) on a base64-encoded image. The image is NOT stored
+    in Supabase - only the inference results are cached.
+
+    Perfect for desktop apps that keep photos local.
+
+    Costs 1 credit per unique image. Cached results are free.
+    """
+    inference_service = OpenRouterService()
+
+    # Decode image
+    try:
+        image_data = inference_service.decode_base64_image(request.image_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid base64 image data: {str(e)}",
+        ) from e
+
+    # Compute hash
+    image_hash = request.image_hash or inference_service.compute_image_hash(image_data)
+
+    # Check inference cache
+    cache_result = (
+        supabase.table("inference_cache")
+        .select("attributes, critique")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    # Check features cache
+    features_cache = (
+        supabase.table("features_cache")
+        .select("features")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    # Check metadata cache
+    metadata_cache = (
+        supabase.table("metadata_cache")
+        .select("metadata")
+        .eq("user_id", user.id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    credit_service = CreditService(supabase)
+    cached = bool(cache_result.data)
+
+    if cached:
+        # Use cached attributes (free)
+        cached_data = cache_result.data[0]
+        attributes = cached_data["attributes"]
+        cached_critique = cached_data.get("critique")
+        new_balance = await credit_service.get_balance(user.id)
+    else:
+        # Deduct credit for new inference
+        try:
+            new_balance = await credit_service.deduct_credit(user.id, 1)
+        except InsufficientCreditsError as e:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=str(e),
+            ) from e
+
+        # Run AI inference for attributes
+        try:
+            attributes = await inference_service.analyze_image(image_data, image_hash)
+        except InferenceError as e:
+            await credit_service.refund_credit(user.id, 1)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+                if e.retryable
+                else status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=e.message,
+            ) from e
+
+        cached_critique = None
+
+    # Compute scores
+    scores = inference_service.compute_scores(attributes)
+
+    # Get or extract features
+    if features_cache.data:
+        features = features_cache.data[0]["features"]
+    else:
+        try:
+            features = await inference_service.extract_features(image_data)
+            # Cache features
+            try:
+                supabase.table("features_cache").insert(
+                    {"user_id": user.id, "image_hash": image_hash, "features": features}
+                ).execute()
+            except Exception:
+                pass
+        except InferenceError:
+            features = {
+                "scene_type": "other",
+                "main_subject": "unclear",
+                "subject_position": "center",
+                "background": "unknown",
+                "lighting": "unknown",
+                "color_palette": "neutral",
+                "depth_of_field": "medium",
+                "time_of_day": "unknown",
+            }
+
+    # Get or generate critique
+    if cached_critique:
+        explanation = cached_critique.get("explanation", "")
+        improvements = cached_critique.get("improvements", [])
+    else:
+        try:
+            critique = await inference_service.generate_critique(
+                image_data, features, attributes, scores["final_score"]
+            )
+            explanation = inference_service.format_explanation(critique)
+            improvements = critique.get("could_improve", [])
+            if critique.get("key_recommendation"):
+                improvements.append(critique["key_recommendation"])
+        except InferenceError:
+            explanation = "Unable to generate detailed critique."
+            improvements = []
+
+    # Get or extract metadata
+    if metadata_cache.data:
+        metadata = metadata_cache.data[0]["metadata"]
+        description = metadata.get("description", "")
+    else:
+        try:
+            metadata = await inference_service.analyze_image_metadata(image_data, image_hash)
+            description = metadata.get("description", "")
+            # Cache metadata
+            try:
+                supabase.table("metadata_cache").insert(
+                    {"user_id": user.id, "image_hash": image_hash, "metadata": metadata}
+                ).execute()
+            except Exception:
+                pass
+        except InferenceError:
+            description = ""
+
+    # Cache inference results (if not already cached)
+    if not cached:
+        try:
+            supabase.table("inference_cache").insert(
+                {
+                    "user_id": user.id,
+                    "image_hash": image_hash,
+                    "attributes": attributes,
+                    "critique": {
+                        "explanation": explanation,
+                        "improvements": improvements,
+                        "description": description,
+                    },
+                }
+            ).execute()
+        except Exception:
+            pass
+
+    return ScoreDirectResponse(
+        image_hash=image_hash,
+        final_score=scores["final_score"],
+        aesthetic_score=scores["aesthetic_score"],
+        technical_score=scores["technical_score"],
+        composition=attributes.get("composition", 0.5),
+        subject_strength=attributes.get("subject_strength", 0.5),
+        visual_appeal=attributes.get("visual_appeal", 0.5),
+        sharpness=attributes.get("sharpness", 0.5),
+        exposure_balance=attributes.get("exposure_balance", 0.5),
+        noise_level=attributes.get("noise_level", 0.5),
+        explanation=explanation,
+        improvements=improvements,
+        description=description,
+        credits_remaining=new_balance,
+        cached=cached,
     )
 
 
@@ -695,6 +975,147 @@ async def score_photo(
         technical_score=scores["technical_score"],
         description=description or "Photo analyzed successfully.",
         credits_remaining=new_balance,
+    )
+
+
+def compute_scores_with_weights(attributes: dict, weights: ScoringWeights) -> dict:
+    """Compute scores from attributes using custom weights.
+
+    Args:
+        attributes: Dict with the 6 normalized attributes (0-1 scale)
+        weights: Custom scoring weights
+
+    Returns:
+        Dictionary with aesthetic_score, technical_score, final_score
+    """
+    # Get attribute values with defaults
+    composition = attributes.get("composition", 0.5)
+    subject_strength = attributes.get("subject_strength", 0.5)
+    visual_appeal = attributes.get("visual_appeal", 0.5)
+    sharpness = attributes.get("sharpness", 0.5)
+    exposure_balance = attributes.get("exposure_balance", 0.5)
+    noise_level = attributes.get("noise_level", 0.5)
+
+    # Aesthetic score (0-1)
+    aesthetic_score = (
+        composition * weights.composition
+        + subject_strength * weights.subject_strength
+        + visual_appeal * weights.visual_appeal
+    )
+
+    # Technical score (0-1)
+    technical_score = (
+        sharpness * weights.sharpness
+        + exposure_balance * weights.exposure_balance
+        + noise_level * weights.noise_level
+    )
+
+    # Final score (0-100)
+    final_score = (
+        aesthetic_score * weights.aesthetic_weight + technical_score * weights.technical_weight
+    ) * 100
+
+    # Apply threshold penalties
+    if sharpness < weights.sharpness_threshold:
+        penalty = (weights.sharpness_threshold - sharpness) / weights.sharpness_threshold * 0.5
+        final_score *= 1 - penalty
+
+    if exposure_balance < weights.exposure_threshold:
+        penalty = (weights.exposure_threshold - exposure_balance) / weights.exposure_threshold * 0.3
+        final_score *= 1 - penalty
+
+    return {
+        "aesthetic_score": round(aesthetic_score, 4),
+        "technical_score": round(technical_score, 4),
+        "final_score": round(final_score, 2),
+    }
+
+
+@router.post("/rescore", response_model=RescoreResponse)
+async def rescore_photos(
+    request: RescoreRequest,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Rescore photos using cached attributes with custom weights.
+
+    This endpoint does NOT run any AI inference. It recomputes scores
+    from previously cached attribute values using new weights.
+
+    Use cases:
+    - Experiment with different scoring weights without re-running inference
+    - Adjust emphasis on composition vs technical quality
+    - Apply stricter or looser threshold penalties
+
+    The operation is free (no credits deducted) since no inference is performed.
+    """
+    # Build query for photos with cached attributes
+    query = (
+        supabase.table("scored_photos")
+        .select("id, model_scores")
+        .eq("user_id", user.id)
+        .not_.is_("model_scores", "null")
+    )
+
+    # Filter by specific photo IDs if provided
+    if request.photo_ids:
+        query = query.in_("id", request.photo_ids)
+
+    result = query.execute()
+
+    if not result.data:
+        return RescoreResponse(
+            photos=[],
+            total_rescored=0,
+            skipped=0,
+            persisted=False,
+        )
+
+    rescored_photos: list[RescoredPhoto] = []
+    skipped = 0
+
+    for photo in result.data:
+        model_scores = photo.get("model_scores") or {}
+
+        # Skip photos without attributes
+        if not model_scores:
+            skipped += 1
+            continue
+
+        # Compute new scores with custom weights
+        new_scores = compute_scores_with_weights(model_scores, request.weights)
+
+        rescored_photos.append(
+            RescoredPhoto(
+                id=photo["id"],
+                final_score=new_scores["final_score"],
+                aesthetic_score=new_scores["aesthetic_score"],
+                technical_score=new_scores["technical_score"],
+                composition=model_scores.get("composition"),
+                subject_strength=model_scores.get("subject_strength"),
+                visual_appeal=model_scores.get("visual_appeal"),
+                sharpness=model_scores.get("sharpness"),
+                exposure_balance=model_scores.get("exposure_balance"),
+                noise_level=model_scores.get("noise_level"),
+            )
+        )
+
+        # Persist updated scores if requested
+        if request.persist:
+            supabase.table("scored_photos").update(
+                {
+                    "final_score": new_scores["final_score"],
+                    "aesthetic_score": new_scores["aesthetic_score"],
+                    "technical_score": new_scores["technical_score"],
+                    "updated_at": "now()",
+                }
+            ).eq("id", photo["id"]).execute()
+
+    return RescoreResponse(
+        photos=rescored_photos,
+        total_rescored=len(rescored_photos),
+        skipped=skipped,
+        persisted=request.persist,
     )
 
 

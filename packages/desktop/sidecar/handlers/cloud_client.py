@@ -41,15 +41,22 @@ def get_auth_token() -> str | None:
     return _get_auth_token()
 
 
-async def analyze_image(image_path: str, image_hash: str) -> dict:
-    """Analyze an image using the cloud API.
+async def score_image(image_path: str, image_hash: str) -> dict:
+    """Score an image using the cloud API.
+
+    Uses /api/photos/score-direct for full scoring pipeline including
+    attributes, features, critique, and metadata.
 
     Args:
         image_path: Path to the image file
         image_hash: SHA256 hash of the image
 
     Returns:
-        Dictionary with attributes and scores
+        Dictionary with full scoring results:
+        - image_hash, final_score, aesthetic_score, technical_score
+        - composition, subject_strength, visual_appeal, sharpness, exposure_balance, noise_level
+        - explanation, improvements, description
+        - credits_remaining, cached
 
     Raises:
         CloudInferenceError: If inference fails
@@ -68,7 +75,7 @@ async def analyze_image(image_path: str, image_hash: str) -> dict:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{CLOUD_API_URL}/api/inference/analyze",
+                f"{CLOUD_API_URL}/api/photos/score-direct",
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
@@ -77,7 +84,7 @@ async def analyze_image(image_path: str, image_hash: str) -> dict:
                     "image_data": image_base64,
                     "image_hash": image_hash,
                 },
-                timeout=120.0,  # Inference can take a while
+                timeout=180.0,  # Full pipeline can take a while
             )
 
             if response.status_code == 200:
@@ -93,7 +100,10 @@ async def analyze_image(image_path: str, image_hash: str) -> dict:
                     retryable=True,
                 )
             else:
-                detail = response.json().get("detail", "Inference failed")
+                try:
+                    detail = response.json().get("detail", "Scoring failed")
+                except Exception:
+                    detail = response.text or "Scoring failed"
                 raise CloudInferenceError(detail, status_code=response.status_code)
 
     except httpx.TimeoutException:
@@ -108,6 +118,12 @@ async def analyze_image(image_path: str, image_hash: str) -> dict:
             status_code=503,
             retryable=True,
         )
+
+
+# Keep old function name as alias for backwards compatibility
+async def analyze_image(image_path: str, image_hash: str) -> dict:
+    """Deprecated: Use score_image instead."""
+    return await score_image(image_path, image_hash)
 
 
 async def extract_metadata(image_path: str, image_hash: str) -> dict:
