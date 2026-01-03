@@ -1,6 +1,7 @@
 export interface Photo {
   id: string;
   image_path: string;  // Storage path
+  original_filename: string | null;  // Original filename when uploaded
   image_url: string | null;  // Signed URL for displaying the image
   final_score: number;
   aesthetic_score: number;

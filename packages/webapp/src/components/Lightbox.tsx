@@ -191,7 +191,7 @@ export function Lightbox({
         <div className="w-full max-w-3xl mt-6 text-white">
           {/* Filename and Score */}
           <div className="flex items-center justify-between mb-4">
-            <div className="text-lg text-gray-400">{photo.image_path}</div>
+            <div className="text-lg text-gray-400">{photo.original_filename || photo.image_path}</div>
             <div className="flex items-center gap-4">
               <span className={`text-4xl font-bold ${scoreColorClasses[scoreLevel]}`}>
                 {score.toFixed(1)}
