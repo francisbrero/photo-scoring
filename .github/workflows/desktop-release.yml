@@ -258,7 +258,7 @@ jobs:
           fi
 
           # Use unpacked directory instead of AppImage (AppImage requires FUSE which isn't available in CI)
-          UNPACKED_APP="release/linux-unpacked/photo-scoring-desktop"
+          UNPACKED_APP="release/linux-unpacked/photo-scorer-desktop"
           if [ ! -f "$UNPACKED_APP" ]; then
             echo "Error: Unpacked app not found at $UNPACKED_APP"
             ls -la release/linux-unpacked/ || true
