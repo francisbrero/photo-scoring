@@ -27,12 +27,14 @@ from collections import defaultdict
 
 from supabase import create_client
 
-# Get Supabase credentials from environment
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+# Get Supabase credentials from environment (support both upper and lowercase)
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("supabase_url")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get(
+    "supabase_service_key"
+)
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+    raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY (or lowercase versions) must be set")
 
 
 def get_supabase():
