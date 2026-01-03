@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .routers import auth, billing, inference, photo_serve, photos
@@ -28,6 +29,22 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # Global exception handler to ensure CORS headers are always added
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Handle all uncaught exceptions and ensure CORS headers are present."""
+        import logging
+        import traceback
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Unhandled exception: {exc}")
+        logger.error(traceback.format_exc())
+
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc)},
+        )
 
     # CORS middleware
     app.add_middleware(
