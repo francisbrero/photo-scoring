@@ -106,6 +106,16 @@ async def login(request: LoginRequest, supabase: SupabaseClient):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
         ) from e
+    except Exception as e:
+        # Log unexpected errors for debugging
+        import traceback
+
+        print(f"Login error: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}",
+        ) from e
 
 
 @router.post("/logout")
