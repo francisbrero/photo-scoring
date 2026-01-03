@@ -50,6 +50,8 @@ export function Upload() {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, fileName: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { session, credits, refreshCredits } = useAuth();
 
@@ -66,30 +68,44 @@ export function Upload() {
   const addFiles = useCallback(async (newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
 
-    // Process files and convert HEIC previews
-    const uploadFiles: UploadFile[] = await Promise.all(
-      fileArray.map(async (file) => {
-        const error = validateFile(file);
+    // Start processing state
+    setIsProcessingFiles(true);
+    setProcessingProgress({ current: 0, total: fileArray.length, fileName: '' });
 
-        // For HEIC files, convert to JPEG for preview
-        let preview: string;
-        if (isHeicFile(file) && !error) {
-          preview = await convertHeicToJpeg(file);
-        } else {
-          preview = URL.createObjectURL(file);
-        }
+    // Process files one by one to show progress
+    const uploadFiles: UploadFile[] = [];
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      const error = validateFile(file);
 
-        return {
-          file,
-          preview,
-          status: error ? 'error' : 'pending',
-          progress: 0,
-          error: error || undefined,
-        } as UploadFile;
-      })
-    );
+      // Update progress with current file
+      const isHeic = isHeicFile(file);
+      setProcessingProgress({
+        current: i,
+        total: fileArray.length,
+        fileName: isHeic ? `Converting ${file.name}` : `Processing ${file.name}`
+      });
+
+      // For HEIC files, convert to JPEG for preview
+      let preview: string;
+      if (isHeic && !error) {
+        preview = await convertHeicToJpeg(file);
+      } else {
+        preview = URL.createObjectURL(file);
+      }
+
+      uploadFiles.push({
+        file,
+        preview,
+        status: error ? 'error' : 'pending',
+        progress: 0,
+        error: error || undefined,
+      } as UploadFile);
+    }
 
     setFiles((prev) => [...prev, ...uploadFiles]);
+    setIsProcessingFiles(false);
+    setProcessingProgress({ current: 0, total: 0, fileName: '' });
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -242,9 +258,10 @@ export function Upload() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !isProcessingFiles && fileInputRef.current?.click()}
         className={`
-          border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
+          border-2 border-dashed rounded-xl p-12 text-center transition-colors
+          ${isProcessingFiles ? 'cursor-wait' : 'cursor-pointer'}
           ${
             isDragging
               ? 'border-[#e94560] bg-[#e94560]/10'
@@ -259,28 +276,69 @@ export function Upload() {
           multiple
           onChange={handleFileSelect}
           className="hidden"
+          disabled={isProcessingFiles}
         />
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
-          <svg
-            className="w-8 h-8 text-[var(--text-muted)]"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-        </div>
-        <p className="text-lg text-[var(--text-primary)] mb-2">
-          {isDragging ? 'Drop photos here' : 'Drag & drop photos here'}
-        </p>
-        <p className="text-sm text-[var(--text-muted)]">
-          or click to select files (JPEG, PNG, HEIC, WebP up to 50MB)
-        </p>
+
+        {isProcessingFiles ? (
+          /* Processing State */
+          <div className="py-4">
+            {/* Spinner */}
+            <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+              <div className="animate-spin w-12 h-12 border-4 border-[#e94560] border-t-transparent rounded-full" />
+            </div>
+
+            {/* Title */}
+            <p className="text-lg text-[var(--text-primary)] mb-4">
+              Processing {processingProgress.total} file{processingProgress.total !== 1 ? 's' : ''}...
+            </p>
+
+            {/* Progress Bar */}
+            <div className="max-w-xs mx-auto mb-3">
+              <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#e94560] rounded-full transition-all duration-300"
+                  style={{
+                    width: `${((processingProgress.current + 1) / processingProgress.total) * 100}%`
+                  }}
+                />
+              </div>
+              <p className="text-sm text-[var(--text-muted)] mt-1">
+                {processingProgress.current + 1} / {processingProgress.total}
+              </p>
+            </div>
+
+            {/* Current Step */}
+            <p className="text-sm text-[var(--text-secondary)] flex items-center justify-center gap-2">
+              <span className="inline-block">🔄</span>
+              {processingProgress.fileName}
+            </p>
+          </div>
+        ) : (
+          /* Default State */
+          <>
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
+              <svg
+                className="w-8 h-8 text-[var(--text-muted)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+            </div>
+            <p className="text-lg text-[var(--text-primary)] mb-2">
+              {isDragging ? 'Drop photos here' : 'Drag & drop photos here'}
+            </p>
+            <p className="text-sm text-[var(--text-muted)]">
+              or click to select files (JPEG, PNG, HEIC, WebP up to 50MB)
+            </p>
+          </>
+        )}
       </div>
 
       {/* File List */}
@@ -368,6 +426,51 @@ export function Upload() {
               </div>
             ))}
           </div>
+
+          {/* Upload Progress Bar (shown during upload/scoring) */}
+          {isUploading && (
+            <div className="mt-6 p-4 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-color)]">
+              {(() => {
+                const uploadingFile = files.find(f => f.status === 'uploading');
+                const scoringFile = files.find(f => f.status === 'scoring');
+                const currentFile = uploadingFile || scoringFile;
+                const doneCount = files.filter(f => f.status === 'done').length;
+                const totalToProcess = files.filter(f => f.status !== 'error').length;
+                const currentStep = uploadingFile ? 'Uploading' : scoringFile ? 'Scoring' : 'Processing';
+                const stepIcon = uploadingFile ? '⬆️' : scoringFile ? '⭐' : '🔄';
+
+                return (
+                  <>
+                    {/* Progress Bar */}
+                    <div className="mb-3">
+                      <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#e94560] rounded-full transition-all duration-300"
+                          style={{
+                            width: `${(doneCount / totalToProcess) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <p className="text-sm text-[var(--text-muted)] mt-1 text-center">
+                        {doneCount} / {totalToProcess} completed
+                      </p>
+                    </div>
+
+                    {/* Current Step */}
+                    {currentFile && (
+                      <p className="text-sm text-[var(--text-secondary)] flex items-center justify-center gap-2">
+                        <span>{stepIcon}</span>
+                        <span>{currentStep}</span>
+                        <span className="text-[var(--text-muted)] truncate max-w-[200px]">
+                          {currentFile.file.name}
+                        </span>
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="mt-6 flex gap-4">
