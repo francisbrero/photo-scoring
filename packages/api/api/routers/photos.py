@@ -20,6 +20,7 @@ class PhotoResponse(BaseModel):
 
     id: str
     image_path: str  # Storage path relative to user folder
+    original_filename: str | None  # Original filename when uploaded
     image_url: str | None  # Signed URL for displaying the image
     final_score: float | None
     aesthetic_score: float | None
@@ -113,6 +114,7 @@ async def list_photos(
             PhotoResponse(
                 id=row["id"],
                 image_path=row["storage_path"],
+                original_filename=row.get("original_filename"),
                 image_url=image_url,
                 final_score=row.get("final_score"),
                 aesthetic_score=row.get("aesthetic_score"),
@@ -189,6 +191,7 @@ async def get_photo(
     return PhotoResponse(
         id=row["id"],
         image_path=row["storage_path"],
+        original_filename=row.get("original_filename"),
         image_url=image_url,
         final_score=row.get("final_score"),
         aesthetic_score=row.get("aesthetic_score"),

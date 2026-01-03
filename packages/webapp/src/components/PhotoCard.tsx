@@ -109,7 +109,7 @@ export function PhotoCard({
       <div className="p-4">
         {/* Filename */}
         <div className="font-bold text-sm text-[var(--text-secondary)] mb-2 break-all">
-          {photo.image_path}
+          {photo.original_filename || photo.image_path}
         </div>
 
         {/* Score Row */}
@@ -168,13 +168,6 @@ export function PhotoCard({
             {photo.location_country && `, ${photo.location_country}`}
           </div>
         )}
-
-        {/* Credit Badge */}
-        <div className="mb-3">
-          <span className="inline-block bg-[var(--bg-tertiary)] px-2.5 py-1 rounded-full text-[11px] text-[#4ade80]">
-            1 credit
-          </span>
-        </div>
 
         {/* Explanation */}
         {photo.explanation && (
