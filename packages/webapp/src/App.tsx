@@ -16,6 +16,7 @@ import { Pricing } from './pages/Pricing';
 import { About } from './pages/About';
 import { Contact } from './pages/Contact';
 import { Downloads } from './pages/Downloads';
+import { Settings } from './pages/Settings';
 
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -48,6 +49,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Upload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           }
         />
