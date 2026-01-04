@@ -330,7 +330,10 @@ class OpenRouterService:
         # Try to find JSON by matching balanced braces
         start_idx = content.find("{")
         if start_idx == -1:
-            raise InferenceError(f"No JSON found in response: {content}")
+            logger.error(
+                f"No JSON found in model response. Content length: {len(content)}. Content: {content[:500]}"
+            )
+            raise InferenceError(f"No JSON found in response: {content[:200]}")
 
         # Count braces to find matching closing brace
         depth = 0
