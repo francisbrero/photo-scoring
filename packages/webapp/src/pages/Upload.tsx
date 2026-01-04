@@ -1,16 +1,19 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import heic2any from 'heic2any';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../lib/api';
 
+const POLL_INTERVAL = 2000; // Poll every 2 seconds
+
 interface UploadFile {
   file: File;
   preview: string;
-  status: 'pending' | 'uploading' | 'scoring' | 'done' | 'error';
+  status: 'pending' | 'uploading' | 'queued' | 'processing' | 'done' | 'error';
   progress: number;
   error?: string;
   photoId?: string;
+  queuePosition?: number;
 }
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'];
@@ -147,6 +150,85 @@ export function Upload() {
     });
   }, []);
 
+  // Poll for status of queued files
+  useEffect(() => {
+    const queuedOrProcessing = files.filter(
+      (f) => f.status === 'queued' || f.status === 'processing'
+    );
+
+    if (queuedOrProcessing.length === 0 || !session?.access_token) {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      for (const uploadFile of queuedOrProcessing) {
+        if (!uploadFile.photoId) continue;
+
+        try {
+          const response = await apiFetch(`/api/photos/${uploadFile.photoId}/status`, {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+
+          if (!response.ok) continue;
+
+          const status = await response.json();
+          const fileIndex = files.findIndex((f) => f.photoId === uploadFile.photoId);
+
+          if (fileIndex === -1) continue;
+
+          if (status.status === 'completed') {
+            setFiles((prev) => {
+              const newFiles = [...prev];
+              newFiles[fileIndex] = {
+                ...newFiles[fileIndex],
+                status: 'done',
+                progress: 100,
+              };
+              return newFiles;
+            });
+            // Refresh credits after completion
+            await refreshCredits();
+          } else if (status.status === 'failed') {
+            setFiles((prev) => {
+              const newFiles = [...prev];
+              newFiles[fileIndex] = {
+                ...newFiles[fileIndex],
+                status: 'error',
+                error: status.error_message || 'Scoring failed',
+              };
+              return newFiles;
+            });
+          } else if (status.status === 'processing') {
+            setFiles((prev) => {
+              const newFiles = [...prev];
+              newFiles[fileIndex] = {
+                ...newFiles[fileIndex],
+                status: 'processing',
+                progress: 75,
+              };
+              return newFiles;
+            });
+          } else if (status.status === 'pending') {
+            setFiles((prev) => {
+              const newFiles = [...prev];
+              newFiles[fileIndex] = {
+                ...newFiles[fileIndex],
+                queuePosition: status.position,
+              };
+              return newFiles;
+            });
+          }
+        } catch {
+          // Ignore polling errors
+        }
+      }
+    }, POLL_INTERVAL);
+
+    return () => clearInterval(pollInterval);
+  }, [files, session?.access_token, refreshCredits]);
+
   const uploadAndScoreFiles = async () => {
     if (!session?.access_token) {
       return;
@@ -187,43 +269,35 @@ export function Upload() {
 
         const result = await response.json();
 
-        // Update status to scoring
-        setFiles((prev) => {
-          const newFiles = [...prev];
-          newFiles[fileIndex] = {
-            ...newFiles[fileIndex],
-            status: 'scoring',
-            progress: 50,
-            photoId: result.id,
-          };
-          return newFiles;
-        });
-
-        // Trigger scoring
-        const scoreResponse = await apiFetch(`/api/photos/${result.id}/score`, {
+        // Queue for scoring (background processing)
+        const queueResponse = await apiFetch(`/api/photos/${result.id}/score/queue`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${session.access_token}`,
           },
         });
 
-        if (!scoreResponse.ok) {
-          const error = await scoreResponse.json();
-          throw new Error(error.detail || 'Scoring failed');
+        if (!queueResponse.ok) {
+          const error = await queueResponse.json();
+          throw new Error(error.detail || 'Failed to queue for scoring');
         }
 
-        // Update status to done
+        const queueResult = await queueResponse.json();
+
+        // Update status to queued - polling will handle the rest
         setFiles((prev) => {
           const newFiles = [...prev];
           newFiles[fileIndex] = {
             ...newFiles[fileIndex],
-            status: 'done',
-            progress: 100,
+            status: 'queued',
+            progress: 50,
+            photoId: result.id,
+            queuePosition: queueResult.position,
           };
           return newFiles;
         });
 
-        // Refresh credits after each successful score
+        // Refresh credits after queuing (credit was deducted)
         await refreshCredits();
       } catch (error) {
         setFiles((prev) => {
@@ -381,7 +455,17 @@ export function Upload() {
                       <span className="text-sm">Uploading...</span>
                     </div>
                   )}
-                  {uploadFile.status === 'scoring' && (
+                  {uploadFile.status === 'queued' && (
+                    <div className="text-white text-center">
+                      <div className="w-8 h-8 bg-amber-500 rounded-full mx-auto mb-2 flex items-center justify-center">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <span className="text-sm">Queued{uploadFile.queuePosition ? ` (#${uploadFile.queuePosition})` : ''}</span>
+                    </div>
+                  )}
+                  {uploadFile.status === 'processing' && (
                     <div className="text-white text-center">
                       <div className="animate-pulse w-8 h-8 bg-[#e94560] rounded-full mx-auto mb-2" />
                       <span className="text-sm">Scoring...</span>
@@ -427,17 +511,20 @@ export function Upload() {
             ))}
           </div>
 
-          {/* Upload Progress Bar (shown during upload/scoring) */}
-          {isUploading && (
+          {/* Upload Progress Bar (shown during upload/queued/processing) */}
+          {(isUploading || files.some(f => f.status === 'queued' || f.status === 'processing')) && (
             <div className="mt-6 p-4 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-color)]">
               {(() => {
                 const uploadingFile = files.find(f => f.status === 'uploading');
-                const scoringFile = files.find(f => f.status === 'scoring');
-                const currentFile = uploadingFile || scoringFile;
+                const queuedFile = files.find(f => f.status === 'queued');
+                const processingFile = files.find(f => f.status === 'processing');
+                const currentFile = uploadingFile || processingFile || queuedFile;
                 const doneCount = files.filter(f => f.status === 'done').length;
+                const queuedCount = files.filter(f => f.status === 'queued').length;
+                const processingCount = files.filter(f => f.status === 'processing').length;
                 const totalToProcess = files.filter(f => f.status !== 'error').length;
-                const currentStep = uploadingFile ? 'Uploading' : scoringFile ? 'Scoring' : 'Processing';
-                const stepIcon = uploadingFile ? '⬆️' : scoringFile ? '⭐' : '🔄';
+                const currentStep = uploadingFile ? 'Uploading' : processingFile ? 'Scoring' : queuedFile ? 'Queued' : 'Processing';
+                const stepIcon = uploadingFile ? '⬆️' : processingFile ? '⭐' : queuedFile ? '⏳' : '🔄';
 
                 return (
                   <>
@@ -453,6 +540,11 @@ export function Upload() {
                       </div>
                       <p className="text-sm text-[var(--text-muted)] mt-1 text-center">
                         {doneCount} / {totalToProcess} completed
+                        {(queuedCount > 0 || processingCount > 0) && (
+                          <span className="ml-2">
+                            ({processingCount > 0 ? `${processingCount} scoring` : ''}{processingCount > 0 && queuedCount > 0 ? ', ' : ''}{queuedCount > 0 ? `${queuedCount} queued` : ''})
+                          </span>
+                        )}
                       </p>
                     </div>
 
@@ -464,6 +556,13 @@ export function Upload() {
                         <span className="text-[var(--text-muted)] truncate max-w-[200px]">
                           {currentFile.file.name}
                         </span>
+                      </p>
+                    )}
+
+                    {/* Background processing note */}
+                    {!isUploading && (queuedCount > 0 || processingCount > 0) && (
+                      <p className="text-xs text-[var(--text-muted)] mt-3 text-center">
+                        Processing continues in the background. You can navigate away safely.
                       </p>
                     )}
                   </>

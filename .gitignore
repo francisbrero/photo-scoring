@@ -67,4 +67,9 @@ photo_scores_corrected_*.csv
 Thumbs.db
 
 # Local Supabase development
-supabase/
+supabase/.branches
+supabase/.temp
+# Keep functions and migrations tracked
+!supabase/functions/
+!supabase/migrations/
+!supabase/config.toml

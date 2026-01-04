@@ -40,6 +40,14 @@ class Settings(BaseSettings):
         "https://photo-scoring.spraiandprai.com",
     ]
 
+    # Internal API key for Edge Functions (defaults to service key if not set)
+    internal_api_key: str = ""
+
+    @property
+    def get_internal_api_key(self) -> str:
+        """Get the internal API key for Edge Function authentication."""
+        return self.internal_api_key or self.supabase_service_key
+
     @property
     def supabase_anon_key(self) -> str:
         """For client-side operations that don't need service key."""
