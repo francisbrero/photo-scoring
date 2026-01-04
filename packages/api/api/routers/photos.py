@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
 from ..dependencies import CurrentUser, SupabaseClient
 from ..services.credits import CreditService, InsufficientCreditsError
 from ..services.openrouter import InferenceError, OpenRouterService
@@ -327,6 +328,29 @@ class ScoreResponse(BaseModel):
     technical_score: float | None
     description: str | None
     credits_remaining: int
+
+
+class QueuedScoreResponse(BaseModel):
+    """Response when a photo is queued for scoring."""
+
+    id: str
+    queue_id: str
+    status: str  # "queued"
+    position: int | None  # Queue position (optional)
+    message: str
+    credits_remaining: int
+
+
+class QueueStatusResponse(BaseModel):
+    """Response for queue status check."""
+
+    photo_id: str
+    status: str  # "pending", "processing", "completed", "failed"
+    position: int | None  # Queue position if pending
+    error_message: str | None  # Error message if failed
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class ScoreDirectRequest(BaseModel):
@@ -749,17 +773,205 @@ async def score_direct(
     )
 
 
+@router.post("/{photo_id}/score/queue", response_model=QueuedScoreResponse)
+async def queue_photo_scoring(
+    photo_id: str,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Queue a photo for background scoring.
+
+    This endpoint deducts 1 credit from the user's balance upfront and
+    adds the photo to the scoring queue. A background worker (Supabase Edge
+    Function) will process the job. Use the /status endpoint to poll for
+    completion, or the photo will be updated in the database when done.
+
+    If the job fails, the credit will be refunded.
+    """
+    # Verify photo exists and belongs to user
+    result = (
+        supabase.table("scored_photos")
+        .select("*")
+        .eq("id", photo_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found",
+        )
+
+    photo = result.data[0]
+
+    # Check if already scored
+    if photo.get("final_score") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Photo has already been scored",
+        )
+
+    # Check if already queued
+    existing_queue = (
+        supabase.table("scoring_queue").select("id, status").eq("photo_id", photo_id).execute()
+    )
+
+    if existing_queue.data:
+        queue_entry = existing_queue.data[0]
+        if queue_entry["status"] in ("pending", "processing"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Photo is already queued for scoring",
+            )
+
+    # Deduct credit upfront
+    credit_service = CreditService(supabase)
+    try:
+        new_balance = await credit_service.deduct_credit(user.id, 1)
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=str(e),
+        ) from e
+
+    # Add to scoring queue
+    queue_entry = (
+        supabase.table("scoring_queue")
+        .upsert(
+            {
+                "user_id": user.id,
+                "photo_id": photo_id,
+                "status": "pending",
+                "retry_count": 0,
+            },
+            on_conflict="photo_id",
+        )
+        .execute()
+    )
+
+    queue_id = queue_entry.data[0]["id"] if queue_entry.data else "unknown"
+
+    # Get queue position (optional)
+    position_result = (
+        supabase.table("scoring_queue")
+        .select("id", count="exact")
+        .eq("status", "pending")
+        .lt("created_at", queue_entry.data[0]["created_at"] if queue_entry.data else "now()")
+        .execute()
+    )
+    position = (position_result.count or 0) + 1
+
+    return QueuedScoreResponse(
+        id=photo_id,
+        queue_id=queue_id,
+        status="queued",
+        position=position,
+        message="Photo queued for scoring. Poll /status endpoint for updates.",
+        credits_remaining=new_balance,
+    )
+
+
+@router.get("/{photo_id}/status", response_model=QueueStatusResponse)
+async def get_scoring_status(
+    photo_id: str,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Get the scoring queue status for a photo.
+
+    Returns the current status of the scoring job. If completed, the photo
+    data will have been updated with scores. If failed, check error_message.
+    """
+    # Verify photo belongs to user
+    photo_result = (
+        supabase.table("scored_photos")
+        .select("id, final_score")
+        .eq("id", photo_id)
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    if not photo_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found",
+        )
+
+    # If photo is already scored and not in queue, return completed status
+    photo = photo_result.data[0]
+    if photo.get("final_score") is not None:
+        # Check if there's a completed queue entry
+        queue_result = (
+            supabase.table("scoring_queue").select("*").eq("photo_id", photo_id).execute()
+        )
+        if queue_result.data:
+            q = queue_result.data[0]
+            return QueueStatusResponse(
+                photo_id=photo_id,
+                status=q["status"],
+                position=None,
+                error_message=q.get("error_message"),
+                created_at=q["created_at"],
+                started_at=q.get("started_at"),
+                completed_at=q.get("completed_at"),
+            )
+        # No queue entry but scored - must have been scored directly
+        return QueueStatusResponse(
+            photo_id=photo_id,
+            status="completed",
+            position=None,
+            error_message=None,
+            created_at=datetime.now(),
+            started_at=None,
+            completed_at=datetime.now(),
+        )
+
+    # Check queue status
+    queue_result = supabase.table("scoring_queue").select("*").eq("photo_id", photo_id).execute()
+
+    if not queue_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo is not in the scoring queue",
+        )
+
+    q = queue_result.data[0]
+
+    # Calculate position if pending
+    position = None
+    if q["status"] == "pending":
+        position_result = (
+            supabase.table("scoring_queue")
+            .select("id", count="exact")
+            .eq("status", "pending")
+            .lt("created_at", q["created_at"])
+            .execute()
+        )
+        position = (position_result.count or 0) + 1
+
+    return QueueStatusResponse(
+        photo_id=photo_id,
+        status=q["status"],
+        position=position,
+        error_message=q.get("error_message"),
+        created_at=q["created_at"],
+        started_at=q.get("started_at"),
+        completed_at=q.get("completed_at"),
+    )
+
+
 @router.post("/{photo_id}/score", response_model=ScoreResponse)
 async def score_photo(
     photo_id: str,
     user: CurrentUser,
     supabase: SupabaseClient,
 ):
-    """Score a previously uploaded photo.
+    """Score a previously uploaded photo (synchronous).
 
     This endpoint deducts 1 credit from the user's balance and
-    triggers the scoring pipeline. For now, it generates placeholder
-    scores until the inference proxy is implemented.
+    processes the scoring pipeline synchronously. For background
+    processing, use the /score/queue endpoint instead.
     """
     # Verify photo exists and belongs to user
     result = (
@@ -1153,11 +1365,13 @@ async def regenerate_explanation(
     user: CurrentUser,
     supabase: SupabaseClient,
 ):
-    """Regenerate explanation and improvements for a scored photo.
+    """Regenerate explanation and improvements for a photo.
 
-    This operation downloads the image and generates a new rich critique
-    using the existing scores and features. This is a free operation
-    (no credit deduction) but requires an API call for the critique.
+    If the photo has already been scored (has model_scores), this regenerates
+    the critique only - a free operation.
+
+    If the photo has NOT been scored (no model_scores), this runs the full
+    scoring pipeline - costs 1 credit.
     """
     # Get photo with existing scores
     result = (
@@ -1178,17 +1392,11 @@ async def regenerate_explanation(
     model_scores = photo.get("model_scores") or {}
     features = photo.get("features_json") or {}
     storage_path = photo.get("storage_path")
-    final_score = photo.get("final_score") or 0
-
-    if not model_scores:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Photo has no scores to regenerate from",
-        )
 
     inference_service = OpenRouterService()
+    credit_service = CreditService(supabase)
 
-    # Download image for rich critique generation
+    # Download image
     try:
         download_result = supabase.storage.from_("photos").download(storage_path)
         if isinstance(download_result, bytes):
@@ -1197,7 +1405,193 @@ async def regenerate_explanation(
             image_data = download_result.read()
         else:
             image_data = bytes(download_result)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download image: {str(e)}",
+        ) from e
 
+    # If photo is unscored, run full scoring pipeline
+    if not model_scores:
+        # Compute image hash for caching
+        image_hash = hashlib.sha256(image_data).hexdigest()
+
+        # Check cache for inference results
+        cache_result = (
+            supabase.table("inference_cache")
+            .select("attributes")
+            .eq("user_id", user.id)
+            .eq("image_hash", image_hash)
+            .execute()
+        )
+
+        features_cache = (
+            supabase.table("features_cache")
+            .select("features")
+            .eq("user_id", user.id)
+            .eq("image_hash", image_hash)
+            .execute()
+        )
+
+        cached_attributes = bool(cache_result.data)
+
+        if cached_attributes:
+            # Use cached attributes (free)
+            attributes = cache_result.data[0]["attributes"]
+        else:
+            # Deduct credit for new inference
+            try:
+                await credit_service.deduct_credit(user.id, 1)
+            except InsufficientCreditsError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=str(e),
+                ) from e
+
+            # Run AI inference
+            try:
+                attributes = await inference_service.analyze_image(image_data, image_hash)
+            except InferenceError as e:
+                # Refund on failure
+                await credit_service.refund_credit(user.id, 1)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+                    if e.retryable
+                    else status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=e.message,
+                ) from e
+
+            # Cache the inference result
+            try:
+                supabase.table("inference_cache").insert(
+                    {
+                        "user_id": user.id,
+                        "image_hash": image_hash,
+                        "attributes": attributes,
+                    }
+                ).execute()
+            except Exception:
+                pass  # Don't fail if caching fails
+
+        # Extract features
+        if features_cache.data:
+            features = features_cache.data[0]["features"]
+        else:
+            try:
+                features = await inference_service.extract_features(image_data)
+                try:
+                    supabase.table("features_cache").insert(
+                        {
+                            "user_id": user.id,
+                            "image_hash": image_hash,
+                            "features": features,
+                        }
+                    ).execute()
+                except Exception:
+                    pass
+            except InferenceError:
+                features = {
+                    "scene_type": "other",
+                    "main_subject": "unclear",
+                    "subject_position": "center",
+                    "background": "unknown",
+                    "lighting": "unknown",
+                    "color_palette": "neutral",
+                    "depth_of_field": "medium",
+                    "time_of_day": "unknown",
+                }
+
+        # Compute scores from attributes
+        scores = inference_service.compute_scores(attributes)
+        model_scores = {
+            "composition": attributes.get("composition"),
+            "subject_strength": attributes.get("subject_strength"),
+            "visual_appeal": attributes.get("visual_appeal"),
+            "sharpness": attributes.get("sharpness"),
+            "exposure_balance": attributes.get("exposure_balance"),
+            "noise_level": attributes.get("noise_level"),
+        }
+        final_score = scores["final_score"]
+        aesthetic_score = scores["aesthetic_score"]
+        technical_score = scores["technical_score"]
+
+        # Get metadata
+        metadata_cache = (
+            supabase.table("metadata_cache")
+            .select("metadata")
+            .eq("user_id", user.id)
+            .eq("image_hash", image_hash)
+            .execute()
+        )
+
+        description = None
+        location_name = None
+        location_country = None
+
+        if metadata_cache.data:
+            meta = metadata_cache.data[0]["metadata"]
+            description = meta.get("description")
+            location_name = meta.get("location_name")
+            location_country = meta.get("location_country")
+        else:
+            try:
+                metadata = await inference_service.analyze_image_metadata(image_data, image_hash)
+                description = metadata.get("description")
+                location_name = metadata.get("location_name")
+                location_country = metadata.get("location_country")
+
+                try:
+                    supabase.table("metadata_cache").insert(
+                        {
+                            "user_id": user.id,
+                            "image_hash": image_hash,
+                            "metadata": metadata,
+                        }
+                    ).execute()
+                except Exception:
+                    pass
+            except InferenceError:
+                pass
+
+        # Generate critique
+        try:
+            critique = await inference_service.generate_critique(
+                image_data, features, model_scores, final_score
+            )
+            explanation = inference_service.format_explanation(critique)
+            improvements = inference_service.format_improvements(critique)
+        except InferenceError:
+            explanation = "Unable to generate detailed critique."
+            improvements = "No specific improvements available."
+
+        # Update photo with full scoring data
+        supabase.table("scored_photos").update(
+            {
+                "final_score": final_score,
+                "aesthetic_score": aesthetic_score,
+                "technical_score": technical_score,
+                "description": description,
+                "explanation": explanation,
+                "improvements": improvements,
+                "location_name": location_name,
+                "location_country": location_country,
+                "model_scores": model_scores,
+                "features_json": features,
+                "updated_at": "now()",
+            }
+        ).eq("id", photo_id).execute()
+
+        return {
+            "message": "Photo scored successfully",
+            "id": photo_id,
+            "scored": True,
+            "final_score": final_score,
+        }
+
+    # Photo already has scores - just regenerate critique (free)
+    final_score = photo.get("final_score") or 0
+
+    try:
         # If no features cached, extract them now
         if not features:
             try:
@@ -1237,7 +1631,11 @@ async def regenerate_explanation(
         }
     ).eq("id", photo_id).execute()
 
-    return {"message": "Explanation and improvements regenerated", "id": photo_id}
+    return {
+        "message": "Critique regenerated successfully",
+        "id": photo_id,
+        "scored": False,
+    }
 
 
 @router.post("/regenerate-all")
@@ -1381,3 +1779,278 @@ async def serve_photo_by_path(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Storage error: {str(e)}",
         ) from e
+
+
+# ==============================================================================
+# Internal Endpoints (for Edge Function / background workers)
+# ==============================================================================
+
+
+class ProcessQueueRequest(BaseModel):
+    """Request body for processing queue jobs."""
+
+    photo_id: str
+    user_id: str
+
+
+class ProcessQueueResponse(BaseModel):
+    """Response from queue processing."""
+
+    success: bool
+    photo_id: str
+    final_score: float | None = None
+    error: str | None = None
+
+
+@router.post("/internal/process-queue", response_model=ProcessQueueResponse)
+async def internal_process_queue(
+    request: ProcessQueueRequest,
+    supabase: SupabaseClient,
+    x_internal_key: str | None = Query(None, alias="x-internal-key"),
+):
+    """Internal endpoint for Edge Function to process a queued photo.
+
+    This endpoint is authenticated via the internal API key (x-internal-key header
+    or query param), not via user JWT. It processes a single photo from the queue.
+
+    Credit deduction is already done when the job was queued.
+    Credit refund is done by this endpoint if scoring fails.
+    """
+    # Validate internal API key
+    settings = get_settings()
+    expected_key = settings.get_internal_api_key
+
+    # Check header or query param
+    if x_internal_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+
+    photo_id = request.photo_id
+    user_id = request.user_id
+
+    # Get the photo record
+    result = (
+        supabase.table("scored_photos")
+        .select("*")
+        .eq("id", photo_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    if not result.data:
+        return ProcessQueueResponse(
+            success=False,
+            photo_id=photo_id,
+            error="Photo not found",
+        )
+
+    photo = result.data[0]
+    storage_path = photo["storage_path"]
+
+    # Update queue status to processing
+    supabase.table("scoring_queue").update(
+        {
+            "status": "processing",
+            "started_at": "now()",
+        }
+    ).eq("photo_id", photo_id).execute()
+
+    # Download image from Supabase Storage
+    try:
+        download_result = supabase.storage.from_("photos").download(storage_path)
+        if isinstance(download_result, bytes):
+            image_data = download_result
+        elif hasattr(download_result, "read"):
+            image_data = download_result.read()
+        else:
+            image_data = bytes(download_result)
+    except Exception as e:
+        error_msg = f"Failed to download image: {str(e)}"
+        await _fail_queue_job(supabase, photo_id, user_id, error_msg)
+        return ProcessQueueResponse(success=False, photo_id=photo_id, error=error_msg)
+
+    # Compute image hash for caching
+    image_hash = hashlib.sha256(image_data).hexdigest()
+
+    # Check caches for inference results
+    cache_result = (
+        supabase.table("inference_cache")
+        .select("attributes")
+        .eq("user_id", user_id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    features_cache = (
+        supabase.table("features_cache")
+        .select("features")
+        .eq("user_id", user_id)
+        .eq("image_hash", image_hash)
+        .execute()
+    )
+
+    inference_service = OpenRouterService()
+    cached_attributes = bool(cache_result.data)
+    cached_features = bool(features_cache.data)
+
+    # Run inference (credit already deducted at queue time)
+    try:
+        if cached_attributes:
+            attributes = cache_result.data[0]["attributes"]
+        else:
+            attributes = await inference_service.analyze_image(image_data, image_hash)
+            # Cache the inference result
+            try:
+                supabase.table("inference_cache").insert(
+                    {
+                        "user_id": user_id,
+                        "image_hash": image_hash,
+                        "attributes": attributes,
+                    }
+                ).execute()
+            except Exception:
+                pass
+
+        # Extract features
+        if cached_features:
+            features = features_cache.data[0]["features"]
+        else:
+            try:
+                features = await inference_service.extract_features(image_data)
+                try:
+                    supabase.table("features_cache").insert(
+                        {
+                            "user_id": user_id,
+                            "image_hash": image_hash,
+                            "features": features,
+                        }
+                    ).execute()
+                except Exception:
+                    pass
+            except InferenceError:
+                features = {
+                    "scene_type": "other",
+                    "main_subject": "unclear",
+                    "subject_position": "center",
+                    "background": "unknown",
+                    "lighting": "unknown",
+                    "color_palette": "neutral",
+                    "depth_of_field": "medium",
+                    "time_of_day": "unknown",
+                }
+
+        # Compute scores
+        scores = inference_service.compute_scores(attributes)
+
+        # Generate critique
+        try:
+            critique = await inference_service.generate_critique(
+                image_data, features, attributes, scores["final_score"]
+            )
+            explanation = inference_service.format_explanation(critique)
+            improvements = inference_service.format_improvements(critique)
+        except InferenceError:
+            explanation = "Unable to generate detailed critique."
+            improvements = "No specific improvements available."
+
+        # Get metadata
+        metadata_cache = (
+            supabase.table("metadata_cache")
+            .select("metadata")
+            .eq("user_id", user_id)
+            .eq("image_hash", image_hash)
+            .execute()
+        )
+
+        description = None
+        location_name = None
+        location_country = None
+
+        if metadata_cache.data:
+            meta = metadata_cache.data[0]["metadata"]
+            description = meta.get("description")
+            location_name = meta.get("location_name")
+            location_country = meta.get("location_country")
+        else:
+            try:
+                metadata = await inference_service.analyze_image_metadata(image_data, image_hash)
+                description = metadata.get("description")
+                location_name = metadata.get("location_name")
+                location_country = metadata.get("location_country")
+                try:
+                    supabase.table("metadata_cache").insert(
+                        {
+                            "user_id": user_id,
+                            "image_hash": image_hash,
+                            "metadata": metadata,
+                        }
+                    ).execute()
+                except Exception:
+                    pass
+            except InferenceError:
+                pass
+
+        # Update photo with scores
+        supabase.table("scored_photos").update(
+            {
+                "final_score": scores["final_score"],
+                "aesthetic_score": scores["aesthetic_score"],
+                "technical_score": scores["technical_score"],
+                "description": description,
+                "explanation": explanation,
+                "improvements": improvements,
+                "location_name": location_name,
+                "location_country": location_country,
+                "model_scores": {
+                    "composition": attributes.get("composition"),
+                    "subject_strength": attributes.get("subject_strength"),
+                    "visual_appeal": attributes.get("visual_appeal"),
+                    "sharpness": attributes.get("sharpness"),
+                    "exposure_balance": attributes.get("exposure_balance"),
+                    "noise_level": attributes.get("noise_level"),
+                },
+                "features_json": features,
+                "updated_at": "now()",
+            }
+        ).eq("id", photo_id).execute()
+
+        # Mark queue job as completed
+        supabase.table("scoring_queue").update(
+            {
+                "status": "completed",
+                "completed_at": "now()",
+            }
+        ).eq("photo_id", photo_id).execute()
+
+        return ProcessQueueResponse(
+            success=True,
+            photo_id=photo_id,
+            final_score=scores["final_score"],
+        )
+
+    except InferenceError as e:
+        error_msg = f"Inference failed: {e.message}"
+        await _fail_queue_job(supabase, photo_id, user_id, error_msg)
+        return ProcessQueueResponse(success=False, photo_id=photo_id, error=error_msg)
+    except Exception as e:
+        error_msg = f"Scoring failed: {str(e)}"
+        await _fail_queue_job(supabase, photo_id, user_id, error_msg)
+        return ProcessQueueResponse(success=False, photo_id=photo_id, error=error_msg)
+
+
+async def _fail_queue_job(supabase, photo_id: str, user_id: str, error_msg: str):
+    """Mark a queue job as failed and refund the credit."""
+    # Update queue status
+    supabase.table("scoring_queue").update(
+        {
+            "status": "failed",
+            "error_message": error_msg,
+            "completed_at": "now()",
+        }
+    ).eq("photo_id", photo_id).execute()
+
+    # Refund credit
+    credit_service = CreditService(supabase)
+    await credit_service.refund_credit(user_id, 1)

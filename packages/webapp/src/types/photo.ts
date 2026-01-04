@@ -3,9 +3,9 @@ export interface Photo {
   image_path: string;  // Storage path
   original_filename: string | null;  // Original filename when uploaded
   image_url: string | null;  // Signed URL for displaying the image
-  final_score: number;
-  aesthetic_score: number;
-  technical_score: number;
+  final_score: number | null;  // null means not yet scored
+  aesthetic_score: number | null;
+  technical_score: number | null;
   composition: number;
   subject_strength: number;
   visual_appeal: number;
@@ -56,9 +56,11 @@ export type ScoreLevel =
   | 'strong'
   | 'competent'
   | 'tourist'
-  | 'flawed';
+  | 'flawed'
+  | 'unscored';
 
-export function getScoreLevel(score: number): ScoreLevel {
+export function getScoreLevel(score: number | null): ScoreLevel {
+  if (score === null) return 'unscored';
   if (score >= 85) return 'excellent';
   if (score >= 70) return 'strong';
   if (score >= 50) return 'competent';
@@ -66,10 +68,15 @@ export function getScoreLevel(score: number): ScoreLevel {
   return 'flawed';
 }
 
-export function getScoreLabel(score: number): string {
+export function getScoreLabel(score: number | null): string {
+  if (score === null) return 'Not Scored';
   if (score >= 85) return 'Excellent';
   if (score >= 70) return 'Strong';
   if (score >= 50) return 'Competent';
   if (score >= 30) return 'Tourist';
   return 'Flawed';
+}
+
+export function isScored(photo: Photo): boolean {
+  return photo.final_score !== null;
 }

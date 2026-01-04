@@ -56,9 +56,9 @@ export function useCorrections(): UseCorrectionsResult {
 
         // If this is a new correction and we have photo data, store original values
         if (!prev[imagePath] && photo) {
-          existing.original_score = photo.final_score;
-          existing.original_aesthetic = photo.aesthetic_score;
-          existing.original_technical = photo.technical_score;
+          existing.original_score = photo.final_score ?? undefined;
+          existing.original_aesthetic = photo.aesthetic_score ?? undefined;
+          existing.original_technical = photo.technical_score ?? undefined;
         }
 
         return {

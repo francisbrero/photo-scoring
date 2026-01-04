@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Photo, Correction, PhotoFeatures } from '../types/photo';
-import { getScoreLevel, getScoreLabel } from '../types/photo';
+import { getScoreLevel, getScoreLabel, isScored } from '../types/photo';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { CorrectionForm } from './CorrectionForm';
 import { Expandable } from './Expandable';
@@ -41,6 +41,7 @@ const scoreColorClasses: Record<string, string> = {
   competent: 'text-[#facc15]',
   tourist: 'text-[#fb923c]',
   flawed: 'text-[#f87171]',
+  unscored: 'text-[var(--text-muted)]',
 };
 
 const scoreLabelClasses: Record<string, string> = {
@@ -49,6 +50,7 @@ const scoreLabelClasses: Record<string, string> = {
   competent: 'bg-yellow-900',
   tourist: 'bg-orange-900',
   flawed: 'bg-red-900',
+  unscored: 'bg-gray-700',
 };
 
 export function PhotoCard({
@@ -57,8 +59,8 @@ export function PhotoCard({
   onImageClick,
   onCorrectionUpdate,
 }: PhotoCardProps) {
-  const score = photo.final_score ?? 0;
-  const scoreLevel = getScoreLevel(score);
+  const scored = isScored(photo);
+  const scoreLevel = getScoreLevel(photo.final_score);
 
   const [imageError, setImageError] = useState(false);
 
@@ -115,20 +117,22 @@ export function PhotoCard({
         {/* Score Row */}
         <div className="flex items-center justify-between mb-3">
           <div className={`text-4xl font-bold ${scoreColorClasses[scoreLevel]}`}>
-            {score.toFixed(1)}
+            {scored ? photo.final_score!.toFixed(1) : '—'}
           </div>
           <span
             className={`text-xs px-2 py-1 rounded uppercase ${scoreLabelClasses[scoreLevel]}`}
           >
-            {getScoreLabel(score)}
+            {getScoreLabel(photo.final_score)}
           </span>
         </div>
 
         {/* Metrics */}
-        <ScoreBreakdown
-          aesthetic={photo.aesthetic_score || 0}
-          technical={photo.technical_score || 0}
-        />
+        {scored && (
+          <ScoreBreakdown
+            aesthetic={photo.aesthetic_score || 0}
+            technical={photo.technical_score || 0}
+          />
+        )}
 
         {/* Description */}
         {photo.description && (

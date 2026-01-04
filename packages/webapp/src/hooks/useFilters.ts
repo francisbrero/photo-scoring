@@ -24,19 +24,41 @@ export function useFilters(photos: Photo[]): UseFiltersResult {
 
     switch (sortBy) {
       case 'score_desc':
-        sorted.sort((a, b) => b.final_score - a.final_score);
+        // Put unscored (null) photos at the end
+        sorted.sort((a, b) => {
+          if (a.final_score === null && b.final_score === null) return 0;
+          if (a.final_score === null) return 1;
+          if (b.final_score === null) return -1;
+          return b.final_score - a.final_score;
+        });
         break;
       case 'score_asc':
-        sorted.sort((a, b) => a.final_score - b.final_score);
+        // Put unscored (null) photos at the end
+        sorted.sort((a, b) => {
+          if (a.final_score === null && b.final_score === null) return 0;
+          if (a.final_score === null) return 1;
+          if (b.final_score === null) return -1;
+          return a.final_score - b.final_score;
+        });
         break;
       case 'name':
         sorted.sort((a, b) => a.image_path.localeCompare(b.image_path));
         break;
       case 'aesthetic':
-        sorted.sort((a, b) => b.aesthetic_score - a.aesthetic_score);
+        sorted.sort((a, b) => {
+          if (a.aesthetic_score === null && b.aesthetic_score === null) return 0;
+          if (a.aesthetic_score === null) return 1;
+          if (b.aesthetic_score === null) return -1;
+          return b.aesthetic_score - a.aesthetic_score;
+        });
         break;
       case 'technical':
-        sorted.sort((a, b) => b.technical_score - a.technical_score);
+        sorted.sort((a, b) => {
+          if (a.technical_score === null && b.technical_score === null) return 0;
+          if (a.technical_score === null) return 1;
+          if (b.technical_score === null) return -1;
+          return b.technical_score - a.technical_score;
+        });
         break;
     }
 
@@ -48,7 +70,13 @@ export function useFilters(photos: Photo[]): UseFiltersResult {
       return { count: 0, avg: 0, min: 0, max: 0 };
     }
 
-    const scores = photos.map((p) => p.final_score);
+    // Only include scored photos in stats
+    const scoredPhotos = photos.filter((p) => p.final_score !== null);
+    if (scoredPhotos.length === 0) {
+      return { count: photos.length, avg: 0, min: 0, max: 0 };
+    }
+
+    const scores = scoredPhotos.map((p) => p.final_score!);
     return {
       count: photos.length,
       avg: scores.reduce((a, b) => a + b, 0) / scores.length,

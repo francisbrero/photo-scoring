@@ -45,7 +45,7 @@ export function CorrectionForm({
   correction,
   onUpdate,
 }: CorrectionFormProps) {
-  const scoreValue = correction?.score ?? Math.round(photo.final_score);
+  const scoreValue = correction?.score ?? Math.round(photo.final_score ?? 0);
   const compositionValue =
     correction?.composition ?? Math.round((photo.composition || 0) * 100);
   const subjectValue =

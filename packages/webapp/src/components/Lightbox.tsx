@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useMemo, useState } from 'react';
 import type { Photo, PhotoFeatures } from '../types/photo';
-import { getScoreLevel, getScoreLabel } from '../types/photo';
+import { getScoreLevel, getScoreLabel, isScored } from '../types/photo';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -20,6 +20,7 @@ const scoreColorClasses: Record<string, string> = {
   competent: 'text-[#facc15]',
   tourist: 'text-[#fb923c]',
   flawed: 'text-[#f87171]',
+  unscored: 'text-gray-400',
 };
 
 const scoreLabelClasses: Record<string, string> = {
@@ -28,6 +29,7 @@ const scoreLabelClasses: Record<string, string> = {
   competent: 'bg-yellow-900',
   tourist: 'bg-orange-900',
   flawed: 'bg-red-900',
+  unscored: 'bg-gray-700',
 };
 
 export function Lightbox({
@@ -119,8 +121,8 @@ export function Lightbox({
   if (!photo) return null;
 
   const imageSrc = photo.image_url;
-  const score = photo.final_score ?? 0;
-  const scoreLevel = getScoreLevel(score);
+  const scored = isScored(photo);
+  const scoreLevel = getScoreLevel(photo.final_score);
 
   return (
     <div
@@ -194,37 +196,39 @@ export function Lightbox({
             <div className="text-lg text-gray-400">{photo.original_filename || photo.image_path}</div>
             <div className="flex items-center gap-4">
               <span className={`text-4xl font-bold ${scoreColorClasses[scoreLevel]}`}>
-                {score.toFixed(1)}
+                {scored ? photo.final_score!.toFixed(1) : '—'}
               </span>
               <span className={`text-sm px-3 py-1 rounded uppercase ${scoreLabelClasses[scoreLevel]}`}>
-                {getScoreLabel(score)}
+                {getScoreLabel(photo.final_score)}
               </span>
             </div>
           </div>
 
           {/* Score breakdown */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-white/10 p-4 rounded-lg">
-              <div className="text-xs text-gray-400 uppercase mb-1">Aesthetic</div>
-              <div className="text-2xl font-bold">{((photo.aesthetic_score || 0) * 100).toFixed(0)}%</div>
-              <div className="h-1.5 bg-white/20 rounded mt-2 overflow-hidden">
-                <div
-                  className="h-full rounded bg-gradient-to-r from-[#e94560] to-[#4ade80]"
-                  style={{ width: `${(photo.aesthetic_score || 0) * 100}%` }}
-                />
+          {scored && (
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-white/10 p-4 rounded-lg">
+                <div className="text-xs text-gray-400 uppercase mb-1">Aesthetic</div>
+                <div className="text-2xl font-bold">{((photo.aesthetic_score || 0) * 100).toFixed(0)}%</div>
+                <div className="h-1.5 bg-white/20 rounded mt-2 overflow-hidden">
+                  <div
+                    className="h-full rounded bg-gradient-to-r from-[#e94560] to-[#4ade80]"
+                    style={{ width: `${(photo.aesthetic_score || 0) * 100}%` }}
+                  />
+                </div>
+              </div>
+              <div className="bg-white/10 p-4 rounded-lg">
+                <div className="text-xs text-gray-400 uppercase mb-1">Technical</div>
+                <div className="text-2xl font-bold">{((photo.technical_score || 0) * 100).toFixed(0)}%</div>
+                <div className="h-1.5 bg-white/20 rounded mt-2 overflow-hidden">
+                  <div
+                    className="h-full rounded bg-gradient-to-r from-[#e94560] to-[#4ade80]"
+                    style={{ width: `${(photo.technical_score || 0) * 100}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <div className="bg-white/10 p-4 rounded-lg">
-              <div className="text-xs text-gray-400 uppercase mb-1">Technical</div>
-              <div className="text-2xl font-bold">{((photo.technical_score || 0) * 100).toFixed(0)}%</div>
-              <div className="h-1.5 bg-white/20 rounded mt-2 overflow-hidden">
-                <div
-                  className="h-full rounded bg-gradient-to-r from-[#e94560] to-[#4ade80]"
-                  style={{ width: `${(photo.technical_score || 0) * 100}%` }}
-                />
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Description */}
           {photo.description && (
@@ -304,17 +308,20 @@ export function Lightbox({
               {isReprocessing ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Reprocessing...
+                  {scored ? 'Regenerating...' : 'Analyzing...'}
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Regenerate Critique
+                  {scored ? 'Regenerate Critique' : 'Analyze Photo'}
                 </>
               )}
             </button>
+            {!scored && (
+              <div className="mt-2 text-xs text-gray-400">This will use 1 credit to score the photo</div>
+            )}
             {reprocessError && (
               <div className="mt-2 text-sm text-red-400">{reprocessError}</div>
             )}
