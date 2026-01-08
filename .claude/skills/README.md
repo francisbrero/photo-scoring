@@ -8,6 +8,8 @@ Production-tested skills for Claude Code that auto-activate based on context usi
 
 ```
 .claude/skills/
+├── governance/             # Architecture governance (1) - ALWAYS ACTIVE
+│   └── architecture-decisions.md
 ├── technical/              # Technical domain skills (6)
 │   ├── openrouter-client.md
 │   ├── scoring-pipeline.md
@@ -65,7 +67,7 @@ Links to detailed documentation.
 
 ## Adding a New Skill
 
-1. **Choose category**: `technical/`, `runbooks/`, or `reference/`
+1. **Choose category**: `governance/`, `technical/`, `runbooks/`, or `reference/`
 2. **Create file**: `[skill-name].md`
 3. **Add frontmatter**: description, globs, alwaysApply
 4. **Write content**: Overview, patterns, resources
@@ -73,6 +75,13 @@ Links to detailed documentation.
 ---
 
 ## Skill Categories
+
+### Governance Skills (Always Active)
+Architecture enforcement and decision tracking:
+- **architecture-decisions.md**: Enforces ADRs, provides checklist for changes
+  - Links to all 8 ADRs in `docs/adr/`
+  - Violation detection patterns
+  - New ADR creation guidelines
 
 ### Technical Skills
 Domain-specific knowledge about the codebase:

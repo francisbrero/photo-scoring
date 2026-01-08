@@ -660,5 +660,190 @@ def benchmark(
     runner.print_summary(result)
 
 
+@app.command()
+def triage(
+    input_dir: Annotated[
+        Path,
+        typer.Option(
+            "--input",
+            "-i",
+            help="Directory containing images to triage.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            resolve_path=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output directory for symlinks to selected photos.",
+            resolve_path=True,
+        ),
+    ],
+    top: Annotated[
+        str,
+        typer.Option(
+            "--top",
+            "-t",
+            help="Target selection: percentage (e.g., '10%%') or count (e.g., '50').",
+        ),
+    ],
+    criteria: Annotated[
+        str,
+        typer.Option(
+            "--criteria",
+            "-c",
+            help="Selection criteria: 'standout', 'quality', or custom text.",
+        ),
+    ] = "standout",
+    passes: Annotated[
+        int,
+        typer.Option(
+            "--passes",
+            "-p",
+            help="Number of triage passes (1=coarse only, 2=coarse+fine).",
+        ),
+    ] = 2,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite",
+            help="Overwrite output directory if it exists.",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose output.",
+        ),
+    ] = False,
+) -> None:
+    """Quickly identify top photos from large collections using grid-based visual triage.
+
+    This command generates composite grid images and uses vision models to identify
+    the best photos, dramatically reducing cost compared to full scoring.
+
+    Examples:
+        # Select top 10% of photos with stand-out potential
+        photo-score triage -i ./vacation -o ./best --top 10%
+
+        # Select top 50 photos
+        photo-score triage -i ./vacation -o ./best --top 50
+
+        # Use custom criteria
+        photo-score triage -i ./vacation -o ./best --top 10% -c "landscapes with dramatic skies"
+
+        # Single pass (faster, less accurate)
+        photo-score triage -i ./vacation -o ./best --top 10% --passes 1
+    """
+    from photo_score.ingestion.discover import discover_images, DEFAULT_EXTENSIONS
+    from photo_score.triage.selector import TriageSelector
+    from photo_score.triage.output import create_selection_folder
+
+    setup_logging(verbose)
+    logger = logging.getLogger(__name__)
+
+    # Validate passes
+    if passes not in (1, 2):
+        typer.echo("Error: --passes must be 1 or 2.")
+        raise typer.Exit(code=1)
+
+    # Check output directory
+    if output_dir.exists() and not overwrite:
+        typer.echo(
+            f"Error: Output directory {output_dir} exists. Use --overwrite to replace."
+        )
+        raise typer.Exit(code=1)
+
+    # Discover images
+    typer.echo(f"Scanning {input_dir} for images...")
+    images = discover_images(input_dir, DEFAULT_EXTENSIONS)
+
+    if not images:
+        typer.echo("No images found.")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Found {len(images)} images.")
+
+    # Parse and validate target
+    try:
+        if top.endswith("%"):
+            target_pct = float(top[:-1])
+            if not 0 < target_pct <= 100:
+                raise ValueError("Percentage must be between 0 and 100")
+            target_count = int(len(images) * target_pct / 100)
+        else:
+            target_count = int(top)
+            if target_count <= 0:
+                raise ValueError("Count must be positive")
+            target_pct = 100 * target_count / len(images)
+    except ValueError as e:
+        typer.echo(f"Error: Invalid --top value '{top}': {e}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Target: {target_count} photos ({target_pct:.1f}%)")
+    typer.echo(f"Criteria: {criteria}")
+    typer.echo(f"Passes: {passes}")
+
+    # Estimate cost
+    photos_per_coarse_grid = 400  # 20x20
+    photos_per_fine_grid = 16  # 4x4
+    coarse_grids = (len(images) + photos_per_coarse_grid - 1) // photos_per_coarse_grid
+    # Estimate ~25% survival rate for fine pass
+    estimated_pass1_survivors = int(len(images) * 0.25)
+    fine_grids = (
+        (estimated_pass1_survivors + photos_per_fine_grid - 1) // photos_per_fine_grid
+        if passes == 2
+        else 0
+    )
+    total_calls = (coarse_grids + fine_grids) * 2  # 2 models
+    estimated_cost = total_calls * 0.005  # ~$0.005 per call average
+
+    typer.echo(
+        f"Estimated: {coarse_grids} coarse grids + {fine_grids} fine grids = "
+        f"{total_calls} API calls (~${estimated_cost:.2f})"
+    )
+    typer.echo("")
+
+    # Run triage
+    image_paths = [img.file_path for img in images]
+
+    try:
+        with TriageSelector() as selector:
+            typer.echo("Running triage...")
+            result = selector.run_triage(
+                image_paths=image_paths,
+                target=top,
+                criteria=criteria,
+                passes=passes,
+            )
+    except Exception as e:
+        logger.exception("Triage failed")
+        typer.echo(f"Error during triage: {e}")
+        raise typer.Exit(code=1)
+
+    # Create output
+    if result.selected_paths:
+        created = create_selection_folder(
+            result.selected_paths, output_dir, overwrite=overwrite
+        )
+        typer.echo("")
+        typer.echo("Triage complete!")
+        typer.echo(f"  Input photos: {result.total_input}")
+        typer.echo(f"  Pass 1 survivors: {result.pass1_survivors}")
+        typer.echo(f"  Final selected: {result.final_selected}")
+        typer.echo(f"  Grids processed: {result.grids_processed}")
+        typer.echo(f"  API calls: {result.api_calls}")
+        typer.echo(f"  Output: {output_dir} ({created} symlinks)")
+    else:
+        typer.echo("No photos selected.")
+        raise typer.Exit(code=0)
+
+
 if __name__ == "__main__":
     app()
