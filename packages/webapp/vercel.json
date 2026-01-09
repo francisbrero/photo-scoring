@@ -5,15 +5,15 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "${BACKEND_URL}/api/:path*"
+      "source": "/api/:path(.*)",
+      "destination": "${BACKEND_URL}/api/:path"
     },
     {
-      "source": "/photos/:path*",
-      "destination": "${BACKEND_URL}/photos/:path*"
+      "source": "/photos/:path(.*)",
+      "destination": "${BACKEND_URL}/photos/:path"
     },
     {
-      "source": "/((?!assets/).*)",
+      "source": "/:path((?!api|photos|assets).*)",
       "destination": "/index.html"
     }
   ],
