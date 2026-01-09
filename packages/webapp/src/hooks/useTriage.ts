@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { uploadFilesToStorage, deleteUploadedFiles, type UploadProgress } from '../lib/storage';
 import type {
   TriageConfig,
   TriageJob,
@@ -16,6 +17,8 @@ const POLL_INTERVAL = 2000; // Poll every 2 seconds
 interface UseTriageReturn {
   // State
   isStarting: boolean;
+  isUploading: boolean;
+  uploadProgress: UploadProgress | null;
   isProcessing: boolean;
   isLoadingActiveJobs: boolean;
   activeJobs: ActiveJobSummary[];
@@ -37,8 +40,10 @@ interface UseTriageReturn {
 }
 
 export function useTriage(): UseTriageReturn {
-  const { session, refreshCredits } = useAuth();
+  const { session, user, refreshCredits } = useAuth();
   const [isStarting, setIsStarting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoadingActiveJobs, setIsLoadingActiveJobs] = useState(false);
   const [activeJobs, setActiveJobs] = useState<ActiveJobSummary[]>([]);
@@ -91,7 +96,7 @@ export function useTriage(): UseTriageReturn {
 
   const startTriage = useCallback(
     async (files: File[], config: TriageConfig): Promise<string | null> => {
-      if (!session?.access_token) {
+      if (!session?.access_token || !user?.id) {
         setError('Not authenticated');
         return null;
       }
@@ -99,21 +104,44 @@ export function useTriage(): UseTriageReturn {
       setIsStarting(true);
       setError(null);
 
-      try {
-        const formData = new FormData();
-        for (const file of files) {
-          formData.append('files', file);
-        }
-        formData.append('target', config.target);
-        formData.append('criteria', config.criteria);
-        formData.append('passes', String(config.passes));
+      // Generate a job ID upfront for organizing uploads
+      const jobId = crypto.randomUUID();
+      let uploadedPaths: string[] = [];
 
-        const response = await apiFetch('/api/triage/start', {
+      try {
+        // Step 1: Upload files directly to Supabase Storage
+        setIsUploading(true);
+        setUploadProgress({ uploaded: 0, total: files.length, currentFile: '' });
+
+        const uploadedFiles = await uploadFilesToStorage(
+          files,
+          user.id,
+          jobId,
+          (progress) => setUploadProgress(progress)
+        );
+
+        uploadedPaths = uploadedFiles.map((f) => f.storagePath);
+        setIsUploading(false);
+        setUploadProgress(null);
+
+        // Step 2: Call API with storage paths (small JSON payload)
+        const response = await apiFetch('/api/triage/start-from-storage', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
           },
-          body: formData,
+          body: JSON.stringify({
+            job_id: jobId,
+            files: uploadedFiles.map((f) => ({
+              original_name: f.originalName,
+              storage_path: f.storagePath,
+              size: f.size,
+            })),
+            target: config.target,
+            criteria: config.criteria,
+            passes: config.passes,
+          }),
         });
 
         if (!response.ok) {
@@ -131,13 +159,19 @@ export function useTriage(): UseTriageReturn {
 
         return jobData.job_id;
       } catch (err) {
+        // Clean up uploaded files on error
+        if (uploadedPaths.length > 0) {
+          await deleteUploadedFiles(uploadedPaths);
+        }
         setError(err instanceof Error ? err.message : 'Unknown error');
         return null;
       } finally {
         setIsStarting(false);
+        setIsUploading(false);
+        setUploadProgress(null);
       }
     },
-    [session?.access_token, refreshCredits]
+    [session?.access_token, user?.id, refreshCredits]
   );
 
   const startPolling = useCallback(
@@ -353,6 +387,8 @@ export function useTriage(): UseTriageReturn {
       pollIntervalRef.current = null;
     }
     setIsStarting(false);
+    setIsUploading(false);
+    setUploadProgress(null);
     setIsProcessing(false);
     setJob(null);
     setStatus(null);
@@ -362,6 +398,8 @@ export function useTriage(): UseTriageReturn {
 
   return {
     isStarting,
+    isUploading,
+    uploadProgress,
     isProcessing,
     isLoadingActiveJobs,
     activeJobs,

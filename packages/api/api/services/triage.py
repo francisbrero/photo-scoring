@@ -86,6 +86,7 @@ class TriageService:
         target: str = "10%",
         criteria: str = "standout",
         passes: int = 2,
+        job_id: str | None = None,
     ) -> dict:
         """Create a new triage job.
 
@@ -94,11 +95,13 @@ class TriageService:
             target: Selection target (e.g., "10%" or "50").
             criteria: Selection criteria.
             passes: Number of passes (1 or 2).
+            job_id: Optional pre-generated job ID (for client-side uploads).
 
         Returns:
             The created job record.
         """
-        job_id = str(uuid.uuid4())
+        if job_id is None:
+            job_id = str(uuid.uuid4())
 
         result = (
             self.supabase.table("triage_jobs")
