@@ -17,6 +17,7 @@ import { About } from './pages/About';
 import { Contact } from './pages/Contact';
 import { Downloads } from './pages/Downloads';
 import { Settings } from './pages/Settings';
+import { Triage } from './pages/Triage';
 
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -57,6 +58,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/triage"
+          element={
+            <ProtectedRoute>
+              <Triage />
             </ProtectedRoute>
           }
         />

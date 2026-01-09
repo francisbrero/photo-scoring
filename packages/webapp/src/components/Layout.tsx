@@ -141,6 +141,20 @@ export function Layout({
                   >
                     Upload
                   </Link>
+                  <Link
+                    to="/triage"
+                    className={`px-3 py-2 rounded-lg transition-colors ${
+                      isActive('/triage')
+                        ? homeTransparentText
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                        : homeTransparentText
+                          ? 'text-white/80 hover:text-white'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    Triage
+                  </Link>
                 </nav>
               )}
 
@@ -197,6 +211,13 @@ export function Layout({
                             className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] md:hidden"
                           >
                             Upload
+                          </Link>
+                          <Link
+                            to="/triage"
+                            onClick={() => setShowUserMenu(false)}
+                            className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] md:hidden"
+                          >
+                            Triage
                           </Link>
                           <Link
                             to="/settings"
