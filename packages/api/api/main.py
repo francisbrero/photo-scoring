@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .routers import auth, billing, inference, photo_serve, photos
+from .routers import auth, billing, inference, photo_serve, photos, triage
 
 
 @asynccontextmanager
@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
     app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
     app.include_router(photo_serve.router, prefix="/photos", tags=["photos"])
+    app.include_router(triage.router, prefix="/api/triage", tags=["triage"])
 
     return app
 
