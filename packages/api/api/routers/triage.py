@@ -6,10 +6,11 @@ import uuid
 import zipfile
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..config import get_settings
 from ..dependencies import CurrentUser, SupabaseClient
 from ..services.credits import CreditService, InsufficientCreditsError
 from ..services.triage import TriageService, calculate_triage_credits
@@ -301,6 +302,92 @@ async def run_triage_background(
             pass  # Best effort refund
     finally:
         triage_service.close()
+
+
+# ==============================================================================
+# Internal Endpoints (for Edge Function / background workers)
+# ==============================================================================
+
+
+class InternalProcessRequest(BaseModel):
+    """Request body for internal triage processing."""
+
+    job_id: str
+    user_id: str
+
+
+class InternalProcessResponse(BaseModel):
+    """Response from internal triage processing."""
+
+    success: bool
+    job_id: str
+    error: str | None = None
+
+
+@router.post("/internal/process", response_model=InternalProcessResponse)
+async def internal_process_triage(
+    request: InternalProcessRequest,
+    background_tasks: BackgroundTasks,
+    supabase: SupabaseClient,
+    x_internal_key: str | None = Query(None, alias="x-internal-key"),
+):
+    """Internal endpoint for Edge Function to process a triage job.
+
+    This endpoint is authenticated via the internal API key (x-internal-key query param),
+    not via user JWT. It starts background processing for a triage job.
+
+    This mirrors the pattern used by /api/photos/internal/process-queue.
+    """
+    # Validate internal API key
+    settings = get_settings()
+    expected_key = settings.get_internal_api_key
+
+    if x_internal_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+
+    job_id = request.job_id
+    user_id = request.user_id
+
+    # Verify job exists
+    result = (
+        supabase.table("triage_jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+    )
+
+    if not result.data:
+        return InternalProcessResponse(
+            success=False,
+            job_id=job_id,
+            error="Triage job not found",
+        )
+
+    job = result.data[0]
+
+    # Check job is in correct state
+    if job["status"] != "processing":
+        return InternalProcessResponse(
+            success=False,
+            job_id=job_id,
+            error=f"Job not in processing state: {job['status']}",
+        )
+
+    credits_deducted = job.get("credits_deducted", 0)
+
+    # Start background processing
+    background_tasks.add_task(
+        run_triage_background,
+        supabase,
+        job_id,
+        user_id,
+        credits_deducted,
+    )
+
+    return InternalProcessResponse(
+        success=True,
+        job_id=job_id,
+    )
 
 
 @router.get("/{job_id}/status", response_model=TriageStatusResponse)
