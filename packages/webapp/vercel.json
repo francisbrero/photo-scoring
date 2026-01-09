@@ -6,11 +6,11 @@
   "rewrites": [
     {
       "source": "/api/:path(.*)",
-      "destination": "${BACKEND_URL}/api/:path"
+      "destination": "https://photo-score-api.onrender.com/api/:path"
     },
     {
       "source": "/photos/:path(.*)",
-      "destination": "${BACKEND_URL}/photos/:path"
+      "destination": "https://photo-score-api.onrender.com/photos/:path"
     },
     {
       "source": "/:path((?!api|photos|assets).*)",
