@@ -54,6 +54,8 @@ export function Triage() {
   const { credits } = useAuth();
   const {
     isStarting,
+    isUploading,
+    uploadProgress,
     isProcessing,
     isLoadingActiveJobs,
     activeJobs,
@@ -292,11 +294,16 @@ export function Triage() {
     );
   }
 
-  // Show upload progress view (while uploading files to server)
-  if (isStarting) {
+  // Show upload progress view (while uploading files to storage)
+  if (isStarting || isUploading) {
+    const progress = uploadProgress;
+    const percentage = progress ? Math.round((progress.uploaded / progress.total) * 100) : 0;
+
     return (
       <div className="max-w-2xl mx-auto text-center py-12">
-        <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-8">Uploading Photos</h1>
+        <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-8">
+          {isUploading ? 'Uploading Photos' : 'Starting Triage'}
+        </h1>
 
         {/* Animated Spinner */}
         <div className="w-24 h-24 mx-auto mb-8">
@@ -305,12 +312,34 @@ export function Triage() {
 
         {/* Phase */}
         <p className="text-xl text-[var(--text-primary)] mb-4">
-          Uploading {files.length} photos to server...
+          {isUploading && progress
+            ? `Uploading ${progress.uploaded} of ${progress.total} photos...`
+            : 'Preparing triage job...'}
         </p>
+
+        {/* Progress Bar */}
+        {isUploading && progress && (
+          <div className="max-w-md mx-auto mb-4">
+            <div className="h-3 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#e94560] rounded-full transition-all duration-300"
+                style={{ width: `${percentage}%` }}
+              />
+            </div>
+            <p className="text-sm text-[var(--text-muted)] mt-2">
+              {percentage}% complete
+            </p>
+            {progress.currentFile && (
+              <p className="text-xs text-[var(--text-muted)] mt-1 truncate">
+                {progress.currentFile}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Info */}
         <p className="text-sm text-[var(--text-muted)]">
-          This may take a moment depending on file sizes and connection speed.
+          Uploading directly to storage for faster processing.
         </p>
       </div>
     );

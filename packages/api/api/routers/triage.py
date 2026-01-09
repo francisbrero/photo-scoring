@@ -305,6 +305,139 @@ async def run_triage_background(
 
 
 # ==============================================================================
+# Storage-based Upload Endpoint (bypasses Vercel 4.5MB limit)
+# ==============================================================================
+
+
+class StorageFileInfo(BaseModel):
+    """Info about a file uploaded directly to storage."""
+
+    original_name: str
+    storage_path: str
+    size: int
+
+
+class StartFromStorageRequest(BaseModel):
+    """Request body for starting triage from pre-uploaded storage files."""
+
+    job_id: str
+    files: list[StorageFileInfo]
+    target: str = "10%"
+    criteria: str = "standout"
+    passes: int = 2
+
+
+@router.post("/start-from-storage", response_model=TriageStartResponse)
+async def start_triage_from_storage(
+    request: StartFromStorageRequest,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+    background_tasks: BackgroundTasks,
+):
+    """Start a triage job with files already uploaded to storage.
+
+    This endpoint accepts files that were uploaded directly to Supabase Storage
+    by the client, bypassing Vercel's 4.5MB body size limit.
+
+    Args:
+        request: Job ID, file info, and triage config.
+
+    Returns:
+        Job ID and status information.
+    """
+    # Validate file count
+    if len(request.files) > MAX_PHOTOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum {MAX_PHOTOS} photos allowed per triage",
+        )
+
+    if len(request.files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided",
+        )
+
+    # Validate passes
+    if request.passes not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passes must be 1 or 2",
+        )
+
+    # Validate storage paths belong to this user and job
+    expected_prefix = f"triage/{user.id}/{request.job_id}/"
+    for file_info in request.files:
+        if not file_info.storage_path.startswith(expected_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid storage path - must be in user/job folder",
+            )
+
+    # Calculate and check credits
+    credits_needed = calculate_triage_credits(len(request.files))
+    credit_service = CreditService(supabase)
+
+    try:
+        await credit_service.deduct_credit(user.id, credits_needed)
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits: need {e.required}, have {e.available}",
+        )
+
+    # Create triage job with provided ID
+    triage_service = TriageService(supabase)
+    job = await triage_service.create_job(
+        user_id=user.id,
+        target=request.target,
+        criteria=request.criteria,
+        passes=request.passes,
+        job_id=request.job_id,  # Use client-provided ID
+    )
+    job_id = job["id"]
+
+    # Create photo records for already-uploaded files
+    for file_info in request.files:
+        # Generate a simple hash from path + size (files already in storage)
+        image_hash = hashlib.sha256(
+            f"{file_info.storage_path}:{file_info.size}".encode()
+        ).hexdigest()
+
+        await triage_service.add_photo_to_job(
+            job_id=job_id,
+            original_filename=file_info.original_name,
+            storage_path=file_info.storage_path,
+            image_hash=image_hash,
+            file_size=file_info.size,
+        )
+
+    # Update job with photo count and credits
+    await triage_service.update_job_status(
+        job_id,
+        total_input=len(request.files),
+        credits_deducted=credits_needed,
+    )
+
+    # Calculate estimated grids
+    photo_count = len(request.files)
+    coarse_grids = (photo_count + 399) // 400  # 20x20 = 400
+    fine_grids = (int(photo_count * 0.25) + 15) // 16  # Estimate 25% pass1, 4x4 = 16
+    estimated_grids = coarse_grids + fine_grids if request.passes == 2 else coarse_grids
+
+    # Start background processing
+    background_tasks.add_task(run_triage_background, supabase, job_id, user.id, credits_needed)
+
+    return TriageStartResponse(
+        job_id=job_id,
+        status="processing",
+        photo_count=photo_count,
+        credits_deducted=credits_needed,
+        estimated_grids=estimated_grids,
+    )
+
+
+# ==============================================================================
 # Internal Endpoints (for Edge Function / background workers)
 # ==============================================================================
 
