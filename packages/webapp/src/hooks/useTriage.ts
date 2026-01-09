@@ -111,7 +111,14 @@ export function useTriage(): UseTriageReturn {
       try {
         // Step 1: Upload files directly to Supabase Storage
         setIsUploading(true);
-        setUploadProgress({ uploaded: 0, total: files.length, currentFile: '' });
+        const uploadStartTime = Date.now();
+        setUploadProgress({
+          uploaded: 0,
+          total: files.length,
+          currentFile: '',
+          startTime: uploadStartTime,
+          estimatedSecondsRemaining: null,
+        });
 
         const uploadedFiles = await uploadFilesToStorage(
           files,
