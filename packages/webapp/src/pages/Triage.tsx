@@ -10,6 +10,20 @@ const HEIC_TYPES = ['image/heic', 'image/heif'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_PHOTOS = 2000;
 
+function formatTimeRemaining(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  } else {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+}
+
 interface PreviewFile {
   file: File;
   preview: string;
@@ -328,6 +342,11 @@ export function Triage() {
             </div>
             <p className="text-sm text-[var(--text-muted)] mt-2">
               {percentage}% complete
+              {progress.estimatedSecondsRemaining !== null && progress.estimatedSecondsRemaining > 0 && (
+                <span className="ml-2">
+                  • {formatTimeRemaining(progress.estimatedSecondsRemaining)} remaining
+                </span>
+              )}
             </p>
             {progress.currentFile && (
               <p className="text-xs text-[var(--text-muted)] mt-1 truncate">

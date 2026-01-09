@@ -18,6 +18,8 @@ export interface UploadProgress {
   uploaded: number;
   total: number;
   currentFile: string;
+  startTime: number;
+  estimatedSecondsRemaining: number | null;
 }
 
 /**
@@ -32,6 +34,16 @@ export async function uploadFilesToStorage(
 ): Promise<UploadedFile[]> {
   const uploaded: UploadedFile[] = [];
   const basePath = `triage/${userId}/${jobId}`;
+  const startTime = Date.now();
+
+  // Helper to calculate estimated time remaining
+  const calculateETA = (completedCount: number): number | null => {
+    if (completedCount === 0) return null;
+    const elapsedMs = Date.now() - startTime;
+    const msPerFile = elapsedMs / completedCount;
+    const remainingFiles = files.length - completedCount;
+    return Math.round((msPerFile * remainingFiles) / 1000);
+  };
 
   // Process files in chunks to avoid overwhelming the connection
   for (let i = 0; i < files.length; i += CHUNK_SIZE) {
@@ -51,6 +63,8 @@ export async function uploadFilesToStorage(
           uploaded: globalIndex,
           total: files.length,
           currentFile: file.name,
+          startTime,
+          estimatedSecondsRemaining: calculateETA(globalIndex),
         });
       }
 
@@ -84,6 +98,8 @@ export async function uploadFilesToStorage(
       uploaded: files.length,
       total: files.length,
       currentFile: 'Complete',
+      startTime,
+      estimatedSecondsRemaining: 0,
     });
   }
 
