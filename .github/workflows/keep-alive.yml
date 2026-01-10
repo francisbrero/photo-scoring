@@ -1,0 +1,27 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render API
+        run: |
+          echo "Pinging Render API to keep it awake..."
+          response=$(curl -s -w "\n%{http_code}" https://photo-score-api.onrender.com/api/triage/health)
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+
+          echo "Response: $body"
+          echo "HTTP Code: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✓ API is healthy"
+          else
+            echo "⚠ API returned non-200 status, may be waking up"
+          fi
