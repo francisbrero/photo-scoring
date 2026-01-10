@@ -258,11 +258,14 @@ class TriageService:
         """Run the triage process for a job.
 
         This is the main processing function that:
-        1. Downloads photos from storage
-        2. Generates grids
-        3. Sends grids to vision models
+        1. Processes photos grid-by-grid (memory efficient)
+        2. Generates grids with downloaded images
+        3. Sends grids to vision models for analysis
         4. Parses selections
         5. Updates photo records with results
+
+        Memory optimization: Images are downloaded per-grid batch, not all at once.
+        See ADR 011 for details.
 
         Args:
             job_id: The triage job ID.
@@ -290,7 +293,7 @@ class TriageService:
             await self.update_job_status(
                 job_id,
                 status="processing",
-                phase="grid_generation",
+                phase="coarse_pass",
                 total_input=total_photos,
                 started_at=datetime.now(UTC).isoformat(),
             )
@@ -302,18 +305,15 @@ class TriageService:
                 target_count = int(target)
                 target_pct = 100.0 * target_count / total_photos
 
-            # Download images and create thumbnails
-            images_data = await self._download_images(job_id, photos, user_id)
-
             # Pass 1: Coarse selection with 20x20 grids
-            await self.update_job_status(job_id, phase="coarse_pass")
+            # Images are downloaded per-grid to minimize memory usage
 
             # Be more permissive in coarse pass
             coarse_target_pct = min(target_pct * 2.5, 50.0)
 
             coarse_selected, coarse_grids, coarse_calls = await self._run_pass(
                 job_id,
-                images_data,
+                photos,  # Pass photo records, not image data
                 grid_size=COARSE_GRID_SIZE,
                 thumbnail_size=THUMBNAIL_SIZE_COARSE,
                 target_pct=coarse_target_pct,
@@ -331,23 +331,23 @@ class TriageService:
 
             await self.update_job_status(job_id, pass1_survivors=len(coarse_selected))
 
-            # Filter images for fine pass
-            fine_images = {pid: data for pid, data in images_data.items() if pid in coarse_selected}
+            # Filter photos for fine pass
+            fine_photos = [p for p in photos if p["id"] in coarse_selected]
 
             final_selected = coarse_selected
             fine_grids = 0
             fine_calls = 0
 
-            if passes == 2 and len(fine_images) > 0:
+            if passes == 2 and len(fine_photos) > 0:
                 # Pass 2: Fine selection with 4x4 grids
                 await self.update_job_status(job_id, phase="fine_pass")
 
                 # Adjust target for smaller pool
-                fine_target_pct = target_pct * total_photos / len(fine_images)
+                fine_target_pct = target_pct * total_photos / len(fine_photos)
 
                 fine_selected, fine_grids, fine_calls = await self._run_pass(
                     job_id,
-                    fine_images,
+                    fine_photos,  # Pass photo records, not image data
                     grid_size=FINE_GRID_SIZE,
                     thumbnail_size=THUMBNAIL_SIZE_FINE,
                     target_pct=fine_target_pct,
@@ -362,7 +362,7 @@ class TriageService:
                     ).execute()
 
                 final_selected = fine_selected
-                logger.info(f"Fine pass: {len(fine_selected)}/{len(fine_images)} selected")
+                logger.info(f"Fine pass: {len(fine_selected)}/{len(fine_photos)} selected")
 
             # Trim to exact target
             target_count = max(1, int(total_photos * target_pct / 100))
@@ -399,15 +399,14 @@ class TriageService:
             await self.update_job_status(job_id, status="failed", error_message=str(e))
             raise
 
-    async def _download_images(
-        self, job_id: str, photos: list[dict], user_id: str
-    ) -> dict[str, bytes]:
-        """Download images from storage.
+    def _download_images_batch(self, photos: list[dict]) -> dict[str, bytes]:
+        """Download a batch of images from storage.
+
+        Memory optimization: Only downloads images needed for one grid at a time.
+        See ADR 011 for details.
 
         Args:
-            job_id: The triage job ID.
-            photos: List of photo records.
-            user_id: The user's ID.
+            photos: List of photo records to download.
 
         Returns:
             Dict mapping photo ID to image bytes.
@@ -427,7 +426,7 @@ class TriageService:
     async def _run_pass(
         self,
         job_id: str,
-        images_data: dict[str, bytes],
+        photos: list[dict],
         grid_size: int,
         thumbnail_size: int,
         target_pct: float,
@@ -436,9 +435,13 @@ class TriageService:
     ) -> tuple[set[str], int, int]:
         """Run a single triage pass.
 
+        Memory optimization: Downloads images per-grid batch instead of all at once.
+        For a 20x20 grid with 5MB images, this uses ~100MB instead of potentially GB.
+        See ADR 011 for details.
+
         Args:
             job_id: The triage job ID.
-            images_data: Dict mapping photo ID to image bytes.
+            photos: List of photo records (not image data).
             grid_size: Grid dimension (e.g., 20 for 20x20).
             thumbnail_size: Thumbnail size in pixels.
             target_pct: Target selection percentage.
@@ -448,25 +451,33 @@ class TriageService:
         Returns:
             Tuple of (selected_photo_ids, grids_processed, api_calls).
         """
-        photo_ids = list(images_data.keys())
         photos_per_grid = grid_size * grid_size
-        num_grids = (len(photo_ids) + photos_per_grid - 1) // photos_per_grid
+        num_grids = (len(photos) + photos_per_grid - 1) // photos_per_grid
 
         selected_ids: set[str] = set()
         api_calls = 0
 
         for grid_idx in range(num_grids):
             start = grid_idx * photos_per_grid
-            end = min(start + photos_per_grid, len(photo_ids))
-            batch_ids = photo_ids[start:end]
-            batch_images = {pid: images_data[pid] for pid in batch_ids}
+            end = min(start + photos_per_grid, len(photos))
+            batch_photos = photos[start:end]
+
+            # Download only images needed for this grid (memory optimization)
+            batch_images = self._download_images_batch(batch_photos)
+
+            if not batch_images:
+                logger.warning(f"No images downloaded for grid {grid_idx + 1}")
+                continue
 
             # Generate grid image
             grid_image, coord_to_id = self._generate_grid(batch_images, grid_size, thumbnail_size)
 
+            # Clear batch_images to free memory before API call
+            batch_images.clear()
+
             # Build prompt
-            rows = min(grid_size, (len(batch_ids) + grid_size - 1) // grid_size)
-            cols = min(grid_size, len(batch_ids))
+            rows = min(grid_size, (len(batch_photos) + grid_size - 1) // grid_size)
+            cols = min(grid_size, len(batch_photos))
             last_row = ROW_LABELS[rows - 1]
             coord_range = f"A1-{last_row}{cols}"
 
@@ -474,7 +485,7 @@ class TriageService:
                 rows=rows,
                 cols=cols,
                 coord_range=coord_range,
-                total_photos=len(batch_ids),
+                total_photos=len(batch_photos),
                 target_pct=target_pct,
                 criteria=criteria,
                 pass_name=pass_name,
@@ -499,6 +510,10 @@ class TriageService:
 
             # Update progress
             await self.update_job_status(job_id, current_step=grid_idx + 1, total_steps=num_grids)
+
+            # Explicit cleanup to help garbage collector
+            del grid_image
+            del coord_to_id
 
         return selected_ids, num_grids, api_calls
 
