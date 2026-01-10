@@ -520,17 +520,18 @@ class TriageService:
             logger.info(
                 f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: downloading {len(batch_photos)} photos"
             )
+            logger.info(f"[TRIAGE] First photo path: {batch_photos[0].get('storage_path', 'unknown')}")
 
             # Download images ONE AT A TIME and create thumbnails (memory optimization)
             # Only thumbnails stay in memory, raw image bytes are discarded immediately
             thumbnails = self._download_thumbnails_streaming(batch_photos, thumbnail_size)
 
             logger.info(
-                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: created {len(thumbnails)} thumbnails"
+                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: created {len(thumbnails)} thumbnails out of {len(batch_photos)} photos"
             )
 
             if not thumbnails:
-                logger.warning(f"No thumbnails created for grid {grid_idx + 1}")
+                logger.error(f"[TRIAGE] CRITICAL: No thumbnails created for grid {grid_idx + 1}! All downloads failed.")
                 continue
 
             # Generate grid image from thumbnails (no raw image data needed)
@@ -564,18 +565,28 @@ class TriageService:
             union_coords: set[str] = set()
             for model_id in TRIAGE_MODELS:
                 try:
+                    logger.info(f"[TRIAGE] Calling model: {model_id}")
                     coords = await self._query_model(grid_image, prompt, model_id)
+                    logger.info(f"[TRIAGE] Model {model_id} returned {len(coords)} coordinates: {list(coords)[:10]}")
                     union_coords.update(coords)
                     api_calls += 1
                 except Exception as e:
-                    logger.warning(f"Model {model_id} failed: {e}")
+                    logger.error(f"[TRIAGE] Model {model_id} FAILED: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     api_calls += 1
 
             # Map coordinates to photo IDs
+            logger.info(f"[TRIAGE] Union has {len(union_coords)} coords, coord_to_id has {len(coord_to_id)} mappings")
+            mapped_count = 0
             for coord in union_coords:
                 coord_upper = coord.upper()
                 if coord_upper in coord_to_id:
                     selected_ids.add(coord_to_id[coord_upper])
+                    mapped_count += 1
+                else:
+                    logger.warning(f"[TRIAGE] Coord {coord_upper} not in mapping")
+            logger.info(f"[TRIAGE] Grid {grid_idx + 1}: mapped {mapped_count} coords to photo IDs, total selected: {len(selected_ids)}")
 
             # Update progress
             await self.update_job_status(job_id, current_step=grid_idx + 1, total_steps=num_grids)
