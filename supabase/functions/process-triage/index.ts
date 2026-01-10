@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const apiBaseUrl =
-      Deno.env.get("API_BASE_URL") || "https://photo-scoring-api.onrender.com";
+      Deno.env.get("API_BASE_URL") || "https://photo-score-api.onrender.com";
     const internalApiKey =
       Deno.env.get("INTERNAL_API_KEY") || supabaseServiceKey;
 
