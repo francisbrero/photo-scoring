@@ -275,15 +275,20 @@ class TriageService:
             Job result with selection counts.
         """
         logger.info(f"[TRIAGE] Starting triage for job {job_id}")
+        logger.info(f"[TRIAGE] Supabase URL: {self.settings.supabase_url}")
         try:
             # Get job and photos
+            logger.info(f"[TRIAGE] Fetching job {job_id} for user {user_id}")
             job = await self.get_job(job_id, user_id)
             if not job:
                 raise ValueError(f"Job not found: {job_id}")
+            logger.info(f"[TRIAGE] Got job: {job.get('status')}, target={job.get('target')}")
 
+            logger.info(f"[TRIAGE] Fetching photos for job {job_id}")
             photos = await self.get_job_photos(job_id)
             if not photos:
                 raise ValueError("No photos in job")
+            logger.info(f"[TRIAGE] Got {len(photos)} photos")
 
             total_photos = len(photos)
             target = job["target"]
@@ -418,16 +423,24 @@ class TriageService:
         """
         try:
             storage_path = photo["storage_path"]
+            logger.debug(f"[TRIAGE] Downloading: {storage_path}")
             # Download from Supabase storage
             raw_bytes = self.supabase.storage.from_("photos").download(storage_path)
+            logger.debug(f"[TRIAGE] Downloaded {len(raw_bytes)} bytes")
 
             # Immediately create thumbnail (discards raw_bytes after)
             thumbnail = self._create_thumbnail(raw_bytes, thumbnail_size)
+            logger.debug(f"[TRIAGE] Created thumbnail {thumbnail.size}")
 
             # raw_bytes goes out of scope here and can be garbage collected
             return (photo["id"], thumbnail)
         except Exception as e:
-            logger.warning(f"Failed to process {photo.get('storage_path', 'unknown')}: {e}")
+            logger.error(
+                f"[TRIAGE] Failed to download/thumbnail {photo.get('storage_path', 'unknown')}: {e}"
+            )
+            import traceback
+
+            logger.error(traceback.format_exc())
             return None
 
     def _download_thumbnails_streaming(
