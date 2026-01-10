@@ -92,6 +92,28 @@ class ProceedResponse(BaseModel):
 # --- Endpoints ---
 
 
+class TriageHealthResponse(BaseModel):
+    """Health check response for triage service."""
+
+    status: str
+    version: str
+    streaming_enabled: bool
+
+
+@router.get("/health", response_model=TriageHealthResponse)
+async def triage_health():
+    """Health check endpoint for triage service.
+
+    Returns service status and version info. No authentication required.
+    Useful for waking up Render's free tier and verifying deployment.
+    """
+    return TriageHealthResponse(
+        status="ok",
+        version="2.0.0",  # Version 2 = streaming thumbnail processing
+        streaming_enabled=True,
+    )
+
+
 class ActiveJobSummary(BaseModel):
     """Summary of an active triage job."""
 
