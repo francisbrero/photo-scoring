@@ -274,6 +274,7 @@ class TriageService:
         Returns:
             Job result with selection counts.
         """
+        logger.info(f"[TRIAGE] Starting triage for job {job_id}")
         try:
             # Get job and photos
             job = await self.get_job(job_id, user_id)
@@ -327,7 +328,7 @@ class TriageService:
                     "id", photo_id
                 ).execute()
 
-            logger.info(f"Coarse pass: {len(coarse_selected)}/{total_photos} selected")
+            logger.info(f"[TRIAGE] Coarse pass: {len(coarse_selected)}/{total_photos} selected")
 
             await self.update_job_status(job_id, pass1_survivors=len(coarse_selected))
 
@@ -362,7 +363,7 @@ class TriageService:
                     ).execute()
 
                 final_selected = fine_selected
-                logger.info(f"Fine pass: {len(fine_selected)}/{len(fine_photos)} selected")
+                logger.info(f"[TRIAGE] Fine pass: {len(fine_selected)}/{len(fine_photos)} selected")
 
             # Trim to exact target
             target_count = max(1, int(total_photos * target_pct / 100))
@@ -395,7 +396,7 @@ class TriageService:
             }
 
         except Exception as e:
-            logger.exception(f"Triage failed for job {job_id}")
+            logger.exception(f"[TRIAGE] FAILED for job {job_id}: {e}")
             await self.update_job_status(job_id, status="failed", error_message=str(e))
             raise
 
@@ -503,9 +504,17 @@ class TriageService:
             end = min(start + photos_per_grid, len(photos))
             batch_photos = photos[start:end]
 
+            logger.info(
+                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: downloading {len(batch_photos)} photos"
+            )
+
             # Download images ONE AT A TIME and create thumbnails (memory optimization)
             # Only thumbnails stay in memory, raw image bytes are discarded immediately
             thumbnails = self._download_thumbnails_streaming(batch_photos, thumbnail_size)
+
+            logger.info(
+                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: created {len(thumbnails)} thumbnails"
+            )
 
             if not thumbnails:
                 logger.warning(f"No thumbnails created for grid {grid_idx + 1}")
@@ -535,6 +544,8 @@ class TriageService:
                 criteria=criteria,
                 pass_name=pass_name,
             )
+
+            logger.info(f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: querying vision models")
 
             # Query models (union consensus)
             union_coords: set[str] = set()

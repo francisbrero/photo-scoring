@@ -311,17 +311,27 @@ async def run_triage_background(
     credits_deducted: int,
 ):
     """Background task to run triage processing."""
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"[TRIAGE-BG] Starting background task for job {job_id}")
+
     triage_service = TriageService(supabase)
     credit_service = CreditService(supabase)
 
     try:
         await triage_service.run_triage(job_id, user_id)
-    except Exception:
+        logger.info(f"[TRIAGE-BG] Completed job {job_id}")
+    except Exception as e:
+        logger.error(f"[TRIAGE-BG] FAILED job {job_id}: {e}")
+        logger.error(traceback.format_exc())
         # Refund credits on failure
         try:
             await credit_service.refund_credit(user_id, credits_deducted)
-        except Exception:
-            pass  # Best effort refund
+            logger.info(f"[TRIAGE-BG] Refunded {credits_deducted} credits for job {job_id}")
+        except Exception as refund_err:
+            logger.error(f"[TRIAGE-BG] Failed to refund credits: {refund_err}")
     finally:
         triage_service.close()
 
