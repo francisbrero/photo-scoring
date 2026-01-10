@@ -425,7 +425,16 @@ class TriageService:
             storage_path = photo["storage_path"]
             logger.debug(f"[TRIAGE] Downloading: {storage_path}")
             # Download from Supabase storage
-            raw_bytes = self.supabase.storage.from_("photos").download(storage_path)
+            download_result = self.supabase.storage.from_("photos").download(storage_path)
+
+            # Handle different return types from Supabase SDK
+            if isinstance(download_result, bytes):
+                raw_bytes = download_result
+            elif hasattr(download_result, "read"):
+                raw_bytes = download_result.read()
+            else:
+                raw_bytes = bytes(download_result)
+
             logger.debug(f"[TRIAGE] Downloaded {len(raw_bytes)} bytes")
 
             # Immediately create thumbnail (discards raw_bytes after)
@@ -520,7 +529,9 @@ class TriageService:
             logger.info(
                 f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: downloading {len(batch_photos)} photos"
             )
-            logger.info(f"[TRIAGE] First photo path: {batch_photos[0].get('storage_path', 'unknown')}")
+            logger.info(
+                f"[TRIAGE] First photo path: {batch_photos[0].get('storage_path', 'unknown')}"
+            )
 
             # Download images ONE AT A TIME and create thumbnails (memory optimization)
             # Only thumbnails stay in memory, raw image bytes are discarded immediately
@@ -531,7 +542,9 @@ class TriageService:
             )
 
             if not thumbnails:
-                logger.error(f"[TRIAGE] CRITICAL: No thumbnails created for grid {grid_idx + 1}! All downloads failed.")
+                logger.error(
+                    f"[TRIAGE] CRITICAL: No thumbnails created for grid {grid_idx + 1}! All downloads failed."
+                )
                 continue
 
             # Generate grid image from thumbnails (no raw image data needed)
@@ -567,17 +580,22 @@ class TriageService:
                 try:
                     logger.info(f"[TRIAGE] Calling model: {model_id}")
                     coords = await self._query_model(grid_image, prompt, model_id)
-                    logger.info(f"[TRIAGE] Model {model_id} returned {len(coords)} coordinates: {list(coords)[:10]}")
+                    logger.info(
+                        f"[TRIAGE] Model {model_id} returned {len(coords)} coordinates: {list(coords)[:10]}"
+                    )
                     union_coords.update(coords)
                     api_calls += 1
                 except Exception as e:
                     logger.error(f"[TRIAGE] Model {model_id} FAILED: {e}")
                     import traceback
+
                     logger.error(traceback.format_exc())
                     api_calls += 1
 
             # Map coordinates to photo IDs
-            logger.info(f"[TRIAGE] Union has {len(union_coords)} coords, coord_to_id has {len(coord_to_id)} mappings")
+            logger.info(
+                f"[TRIAGE] Union has {len(union_coords)} coords, coord_to_id has {len(coord_to_id)} mappings"
+            )
             mapped_count = 0
             for coord in union_coords:
                 coord_upper = coord.upper()
@@ -586,7 +604,9 @@ class TriageService:
                     mapped_count += 1
                 else:
                     logger.warning(f"[TRIAGE] Coord {coord_upper} not in mapping")
-            logger.info(f"[TRIAGE] Grid {grid_idx + 1}: mapped {mapped_count} coords to photo IDs, total selected: {len(selected_ids)}")
+            logger.info(
+                f"[TRIAGE] Grid {grid_idx + 1}: mapped {mapped_count} coords to photo IDs, total selected: {len(selected_ids)}"
+            )
 
             # Update progress
             await self.update_job_status(job_id, current_step=grid_idx + 1, total_steps=num_grids)
