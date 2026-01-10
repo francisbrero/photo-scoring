@@ -399,29 +399,67 @@ class TriageService:
             await self.update_job_status(job_id, status="failed", error_message=str(e))
             raise
 
-    def _download_images_batch(self, photos: list[dict]) -> dict[str, bytes]:
-        """Download a batch of images from storage.
+    def _download_and_thumbnail(
+        self, photo: dict, thumbnail_size: int
+    ) -> tuple[str, Image.Image] | None:
+        """Download a single image and create thumbnail immediately.
 
-        Memory optimization: Only downloads images needed for one grid at a time.
+        Memory optimization: Downloads one image at a time, creates thumbnail,
+        then discards raw bytes. Only the small thumbnail stays in memory.
         See ADR 011 for details.
 
         Args:
-            photos: List of photo records to download.
+            photo: Photo record with storage_path.
+            thumbnail_size: Target thumbnail size in pixels.
 
         Returns:
-            Dict mapping photo ID to image bytes.
+            Tuple of (photo_id, thumbnail_image) or None on failure.
         """
-        images = {}
-        for photo in photos:
-            try:
-                storage_path = photo["storage_path"]
-                # Download from Supabase storage
-                response = self.supabase.storage.from_("photos").download(storage_path)
-                images[photo["id"]] = response
-            except Exception as e:
-                logger.warning(f"Failed to download {photo['storage_path']}: {e}")
+        try:
+            storage_path = photo["storage_path"]
+            # Download from Supabase storage
+            raw_bytes = self.supabase.storage.from_("photos").download(storage_path)
 
-        return images
+            # Immediately create thumbnail (discards raw_bytes after)
+            thumbnail = self._create_thumbnail(raw_bytes, thumbnail_size)
+
+            # raw_bytes goes out of scope here and can be garbage collected
+            return (photo["id"], thumbnail)
+        except Exception as e:
+            logger.warning(f"Failed to process {photo.get('storage_path', 'unknown')}: {e}")
+            return None
+
+    def _download_thumbnails_streaming(
+        self, photos: list[dict], thumbnail_size: int
+    ) -> dict[str, Image.Image]:
+        """Download images and create thumbnails one at a time.
+
+        Memory optimization: Only one raw image is in memory at a time.
+        Thumbnails are small (~100x100 or ~400x400 pixels) so they fit easily.
+        For 16 photos: ~16 * 100KB = 1.6MB instead of 16 * 3MB = 48MB.
+        See ADR 011 for details.
+
+        Args:
+            photos: List of photo records to process.
+            thumbnail_size: Target thumbnail size in pixels.
+
+        Returns:
+            Dict mapping photo ID to PIL Image thumbnail.
+        """
+        import gc
+
+        thumbnails = {}
+        for i, photo in enumerate(photos):
+            result = self._download_and_thumbnail(photo, thumbnail_size)
+            if result:
+                photo_id, thumbnail = result
+                thumbnails[photo_id] = thumbnail
+
+            # Force garbage collection every 4 images to keep memory low
+            if (i + 1) % 4 == 0:
+                gc.collect()
+
+        return thumbnails
 
     async def _run_pass(
         self,
@@ -435,8 +473,9 @@ class TriageService:
     ) -> tuple[set[str], int, int]:
         """Run a single triage pass.
 
-        Memory optimization: Downloads images per-grid batch instead of all at once.
-        For a 20x20 grid with 5MB images, this uses ~100MB instead of potentially GB.
+        Memory optimization: Downloads images one at a time, creates thumbnails
+        immediately, and only keeps small thumbnails in memory.
+        For 16 photos at 100x100 thumbnails: ~1.6MB instead of 48MB raw images.
         See ADR 011 for details.
 
         Args:
@@ -451,6 +490,8 @@ class TriageService:
         Returns:
             Tuple of (selected_photo_ids, grids_processed, api_calls).
         """
+        import gc
+
         photos_per_grid = grid_size * grid_size
         num_grids = (len(photos) + photos_per_grid - 1) // photos_per_grid
 
@@ -462,18 +503,22 @@ class TriageService:
             end = min(start + photos_per_grid, len(photos))
             batch_photos = photos[start:end]
 
-            # Download only images needed for this grid (memory optimization)
-            batch_images = self._download_images_batch(batch_photos)
+            # Download images ONE AT A TIME and create thumbnails (memory optimization)
+            # Only thumbnails stay in memory, raw image bytes are discarded immediately
+            thumbnails = self._download_thumbnails_streaming(batch_photos, thumbnail_size)
 
-            if not batch_images:
-                logger.warning(f"No images downloaded for grid {grid_idx + 1}")
+            if not thumbnails:
+                logger.warning(f"No thumbnails created for grid {grid_idx + 1}")
                 continue
 
-            # Generate grid image
-            grid_image, coord_to_id = self._generate_grid(batch_images, grid_size, thumbnail_size)
+            # Generate grid image from thumbnails (no raw image data needed)
+            grid_image, coord_to_id = self._generate_grid_from_thumbnails(
+                thumbnails, grid_size, thumbnail_size
+            )
 
-            # Clear batch_images to free memory before API call
-            batch_images.clear()
+            # Clear thumbnails to free memory before API call
+            thumbnails.clear()
+            gc.collect()
 
             # Build prompt
             rows = min(grid_size, (len(batch_photos) + grid_size - 1) // grid_size)
@@ -514,8 +559,116 @@ class TriageService:
             # Explicit cleanup to help garbage collector
             del grid_image
             del coord_to_id
+            gc.collect()
 
         return selected_ids, num_grids, api_calls
+
+    def _generate_grid_from_thumbnails(
+        self,
+        thumbnails: dict[str, Image.Image],
+        grid_size: int,
+        thumbnail_size: int,
+    ) -> tuple[bytes, dict[str, str]]:
+        """Generate a labeled grid image from pre-created thumbnails.
+
+        Memory optimization: Takes PIL Image thumbnails directly instead of
+        raw bytes, avoiding the need to hold raw image data in memory.
+        See ADR 011 for details.
+
+        Args:
+            thumbnails: Dict mapping photo ID to PIL Image thumbnail.
+            grid_size: Grid dimension.
+            thumbnail_size: Thumbnail size in pixels.
+
+        Returns:
+            Tuple of (grid_jpeg_bytes, coord_to_photo_id_mapping).
+        """
+        from PIL import ImageDraw, ImageFont
+
+        photo_ids = list(thumbnails.keys())
+        num_photos = len(photo_ids)
+
+        # Calculate actual dimensions
+        cols = min(grid_size, num_photos)
+        rows = (num_photos + cols - 1) // cols
+
+        # Layout constants
+        label_height = 20
+        margin = 2
+        row_label_width = 25
+        col_label_height = 20
+        background_color = (40, 40, 40)
+        label_color = (255, 255, 0)
+
+        cell_width = thumbnail_size + margin
+        cell_height = thumbnail_size + label_height + margin
+
+        img_width = row_label_width + (cols * cell_width)
+        img_height = col_label_height + (rows * cell_height)
+
+        # Create grid image
+        grid_image = Image.new("RGB", (img_width, img_height), background_color)
+        draw = ImageDraw.Draw(grid_image)
+
+        # Try to load a font
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+        except OSError:
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
+            except OSError:
+                font = ImageFont.load_default()
+
+        # Draw column labels
+        for col in range(cols):
+            x = row_label_width + (col * cell_width) + (cell_width // 2)
+            label = str(col + 1)
+            bbox = draw.textbbox((0, 0), label, font=font)
+            text_width = bbox[2] - bbox[0]
+            draw.text((x - text_width // 2, 4), label, fill=label_color, font=font)
+
+        # Draw thumbnails and labels
+        coord_to_id: dict[str, str] = {}
+
+        for idx, photo_id in enumerate(photo_ids):
+            row = idx // cols
+            col = idx % cols
+
+            # Row label
+            if col == 0:
+                y = col_label_height + (row * cell_height) + (cell_height // 2)
+                draw.text((5, y - 6), ROW_LABELS[row], fill=label_color, font=font)
+
+            # Position
+            x = row_label_width + (col * cell_width)
+            y = col_label_height + (row * cell_height)
+
+            # Paste pre-created thumbnail
+            try:
+                thumbnail = thumbnails[photo_id]
+                grid_image.paste(thumbnail, (x, y))
+            except Exception as e:
+                logger.warning(f"Failed to paste thumbnail: {e}")
+                draw.rectangle(
+                    [x, y, x + thumbnail_size, y + thumbnail_size],
+                    fill=(80, 80, 80),
+                    outline=(120, 120, 120),
+                )
+
+            # Coordinate label
+            coord = f"{ROW_LABELS[row]}{col + 1}"
+            coord_to_id[coord] = photo_id
+
+            label_y = y + thumbnail_size + 2
+            bbox = draw.textbbox((0, 0), coord, font=font)
+            text_width = bbox[2] - bbox[0]
+            label_x = x + (thumbnail_size - text_width) // 2
+            draw.text((label_x, label_y), coord, fill=label_color, font=font)
+
+        # Convert to JPEG bytes
+        buffer = io.BytesIO()
+        grid_image.save(buffer, format="JPEG", quality=90)
+        return buffer.getvalue(), coord_to_id
 
     def _generate_grid(
         self,
@@ -523,7 +676,7 @@ class TriageService:
         grid_size: int,
         thumbnail_size: int,
     ) -> tuple[bytes, dict[str, str]]:
-        """Generate a labeled grid image.
+        """Generate a labeled grid image (legacy method, kept for compatibility).
 
         Args:
             images_data: Dict mapping photo ID to image bytes.
