@@ -235,13 +235,15 @@ async def run_triage_background(job_id: str):
             ]
             coarse_grids.append((grid_path, chunk_paths))
 
-        # Analyze grids locally
+        # Analyze grids via cloud API (uses user's credits)
         selected_paths_pass1 = set()
 
-        # Get OpenRouter API key from environment
-        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
-        if not openrouter_key:
-            raise RuntimeError("OPENROUTER_API_KEY environment variable not set")
+        # Get auth token
+        from .auth import get_auth_token
+
+        auth_token = get_auth_token()
+        if not auth_token:
+            raise RuntimeError("Not authenticated - please log in to use Triage")
 
         for idx, (grid_path, chunk_paths) in enumerate(coarse_grids):
             job["progress"]["current_step"] = idx + 1
@@ -259,13 +261,14 @@ async def run_triage_background(job_id: str):
                 with open(grid_path, "rb") as f:
                     grid_data = base64.b64encode(f.read()).decode("utf-8")
 
-                # Analyze grid locally via OpenRouter
-                selected_coords = await analyze_grid_local(
+                # Analyze grid via cloud API
+                selected_coords = await analyze_grid_via_cloud(
                     grid_data,
                     "coarse",
                     config["criteria"],
                     config["target"],
-                    openrouter_key,
+                    len(all_paths),
+                    auth_token,
                 )
 
                 # Map coordinates back to file paths
@@ -339,13 +342,14 @@ async def run_triage_background(job_id: str):
                     with open(grid_path, "rb") as f:
                         grid_data = base64.b64encode(f.read()).decode("utf-8")
 
-                    # Analyze grid locally via OpenRouter
-                    selected_coords = await analyze_grid_local(
+                    # Analyze grid via cloud API
+                    selected_coords = await analyze_grid_via_cloud(
                         grid_data,
                         "fine",
                         config["criteria"],
                         config["target"],
-                        openrouter_key,
+                        len(all_paths),
+                        auth_token,
                     )
 
                     # Map coordinates back to file paths
@@ -389,103 +393,48 @@ async def run_triage_background(job_id: str):
         job["error_message"] = str(e)
 
 
-async def analyze_grid_local(
+async def analyze_grid_via_cloud(
     grid_base64: str,
     pass_type: str,
     criteria: str,
     target: str,
-    openrouter_key: str,
+    photo_count: int,
+    auth_token: str,
 ) -> list[tuple[int, int]]:
-    """Analyze grid locally by calling OpenRouter directly."""
-    # Build prompt based on pass type
-    if pass_type == "coarse":
-        prompt = f"""You are selecting photos from a grid based on: {criteria}
+    """Analyze grid by calling cloud API (uses user's credits, not local API key)."""
+    from .cloud_client import get_api_base_url
 
-Target: Select approximately {target} of photos.
+    api_url = get_api_base_url()
 
-Examine this grid and identify the coordinates of photos that match the criteria.
+    payload = {
+        "grid_base64": grid_base64,
+        "pass_type": pass_type,
+        "criteria": criteria,
+        "target": target,
+        "photo_count": photo_count,
+    }
 
-Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
-Example: A1, A3, B2, C4
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type": "application/json",
+    }
 
-Do not include any explanation or other text. Just the coordinates."""
-    else:  # fine pass
-        prompt = f"""You are selecting the BEST photos from a pre-filtered grid based on: {criteria}
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            f"{api_url}/triage/analyze-grid",
+            json=payload,
+            headers=headers,
+        )
 
-Target: Select approximately {target} of photos.
+        if response.status_code == 402:
+            raise RuntimeError("Insufficient credits for triage")
+        elif response.status_code == 401:
+            raise RuntimeError("Not authenticated - please log in")
+        elif response.status_code != 200:
+            raise RuntimeError(f"API error {response.status_code}: {response.text}")
 
-These photos have already passed an initial filter. Now identify the absolute best ones.
-
-Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
-Example: A1, A3, B2, C4
-
-Do not include any explanation or other text. Just the coordinates."""
-
-    # Models to try (same as API triage)
-    models = [
-        "qwen/qwen2.5-vl-72b-instruct",
-        "google/gemini-2.5-flash",
-    ]
-
-    # Try each model
-    for model_id in models:
-        try:
-            payload = {
-                "model": model_id,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{grid_base64}"
-                                },
-                            },
-                            {"type": "text", "text": prompt},
-                        ],
-                    }
-                ],
-                "max_tokens": 1024,
-                "temperature": 0,
-            }
-
-            headers = {
-                "Authorization": f"Bearer {openrouter_key}",
-                "Content-Type": "application/json",
-            }
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result["choices"][0]["message"]["content"]
-
-                    # Parse coordinates from response
-                    # Look for pattern like A1, B2, C3, etc.
-                    coord_pattern = re.compile(r"\b([A-T])(\d{1,2})\b", re.IGNORECASE)
-                    matches = coord_pattern.findall(content)
-
-                    # Row labels A-T map to 0-19
-                    row_labels = "ABCDEFGHIJKLMNOPQRST"
-                    coords = []
-                    for letter, num in matches:
-                        letter_upper = letter.upper()
-                        if letter_upper in row_labels:
-                            row = row_labels.index(letter_upper)
-                            col = int(num) - 1  # Convert 1-based to 0-based
-                            coords.append((row, col))
-
-                    return coords
-
-        except Exception:
-            # Try next model
-            continue
+        result = response.json()
+        return result["coordinates"]
 
     # If all models fail, return empty (conservative)
     return []

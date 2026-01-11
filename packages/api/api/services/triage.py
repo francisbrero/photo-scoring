@@ -1002,6 +1002,75 @@ Do not include any explanation or other text. Just the coordinates."""
 
         return coords
 
+    async def analyze_grid_from_base64(
+        self,
+        grid_base64: str,
+        pass_type: str,
+        criteria: str,
+        target: str,
+    ) -> list[tuple[int, int]]:
+        """Analyze a base64-encoded grid image and return selected coordinates.
+
+        This method is used by the desktop client to analyze locally-generated grids.
+
+        Args:
+            grid_base64: Base64-encoded grid image (JPEG).
+            pass_type: "coarse" or "fine".
+            criteria: Selection criteria.
+            target: Target percentage.
+
+        Returns:
+            List of (row, col) coordinate tuples.
+        """
+        # Decode base64 to bytes
+        grid_bytes = base64.b64decode(grid_base64)
+
+        # Build prompt based on pass type
+        if pass_type == "coarse":
+            prompt = f"""You are selecting photos from a grid based on: {criteria}
+
+Target: Select approximately {target} of photos.
+
+Examine this grid and identify the coordinates of photos that match the criteria.
+
+Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
+
+Do not include any explanation or other text. Just the coordinates."""
+        else:  # fine
+            prompt = f"""You are refining a selection based on: {criteria}
+
+Target: {target}
+
+Examine this grid carefully and identify the best photos.
+
+Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
+
+Do not include any explanation or other text. Just the coordinates."""
+
+        # Try models in order
+        all_coords = set()
+        for model_id in TRIAGE_MODELS:
+            try:
+                coords = await self._query_model(grid_bytes, prompt, model_id)
+                all_coords.update(coords)
+                if coords:
+                    break  # Use first model that returns results
+            except Exception:
+                continue
+
+        # Convert coordinate strings (like "A1", "B3") to (row, col) tuples
+        result = []
+        for coord_str in all_coords:
+            # Parse "A1" -> (0, 0), "B3" -> (1, 2)
+            matches = COORD_PATTERN.findall(coord_str)
+            if matches:
+                row_letter, col_num = matches[0]
+                row_idx = ord(row_letter.upper()) - ord("A")
+                col_idx = int(col_num) - 1
+                result.append((row_idx, col_idx))
+
+        return result
+
     def close(self):
         """Close the HTTP client."""
         self.http_client.close()

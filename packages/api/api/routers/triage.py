@@ -833,6 +833,79 @@ async def download_selected(
     )
 
 
+class AnalyzeGridRequest(BaseModel):
+    """Request to analyze a single grid image (for desktop client)."""
+
+    grid_base64: str
+    pass_type: str  # "coarse" or "fine"
+    criteria: str
+    target: str
+    photo_count: int  # Number of photos being triaged (for credit calculation)
+
+
+class AnalyzeGridResponse(BaseModel):
+    """Response with selected coordinates from grid analysis."""
+
+    coordinates: list[tuple[int, int]]
+    credits_deducted: int
+
+
+@router.post("/analyze-grid", response_model=AnalyzeGridResponse)
+async def analyze_grid_endpoint(
+    request: AnalyzeGridRequest,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+):
+    """Analyze a grid image and return selected coordinates (for desktop client).
+
+    Desktop generates grids locally and sends them here for AI analysis.
+    This avoids needing OpenRouter API key on desktop and uses user's credits instead.
+
+    Args:
+        request: Grid image (base64) and parameters.
+        user: Authenticated user.
+        supabase: Supabase client.
+
+    Returns:
+        Selected coordinates and credits deducted.
+    """
+    # Calculate credits needed (1 credit per ~100 photos being triaged)
+    credits_needed = max(1, request.photo_count // 100)
+
+    # Deduct credits
+    credit_service = CreditService(supabase)
+    try:
+        await credit_service.deduct_credit(user.id, credits_needed)
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits: need {e.required}, have {e.available}",
+        )
+
+    # Analyze grid using triage service
+    triage_service = TriageService(supabase)
+
+    try:
+        coordinates = await triage_service.analyze_grid_from_base64(
+            grid_base64=request.grid_base64,
+            pass_type=request.pass_type,
+            criteria=request.criteria,
+            target=request.target,
+        )
+
+        return AnalyzeGridResponse(
+            coordinates=coordinates,
+            credits_deducted=credits_needed,
+        )
+    except Exception as e:
+        # Refund credits on failure
+        await credit_service.refund_credit(user.id, credits_needed)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Grid analysis failed: {str(e)}",
+        )
+
+
 @router.delete("/{job_id}")
 async def cancel_triage(
     job_id: str,
