@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getAuthStatus, login, signup, logout, getCredits, type AuthStatus } from '../../services/sidecar';
+import { getAuthStatus, login, signup, logout, getCredits, type AuthStatus, getApiKeyStatus, setApiKey, deleteApiKey, type ApiKeyStatus } from '../../services/sidecar';
 
 interface SettingsProps {
   onClose: () => void;
@@ -15,8 +15,14 @@ export function Settings({ onClose }: SettingsProps) {
   const [success, setSuccess] = useState<string | null>(null);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
 
+  // API Key state
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
+  const [newApiKey, setNewApiKey] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+
   useEffect(() => {
     loadAuthStatus();
+    loadApiKeyStatus();
   }, []);
 
   const loadAuthStatus = async () => {
@@ -38,6 +44,56 @@ export function Settings({ onClose }: SettingsProps) {
       setError(err instanceof Error ? err.message : 'Failed to load auth status');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadApiKeyStatus = async () => {
+    try {
+      const status = await getApiKeyStatus();
+      setApiKeyStatus(status);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleSetApiKey = async () => {
+    if (!newApiKey.trim()) {
+      setError('Please enter an API key');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      await setApiKey(newApiKey.trim());
+      setSuccess('API key saved successfully');
+      setNewApiKey('');
+      setShowApiKeyInput(false);
+      await loadApiKeyStatus();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save API key');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteApiKey = async () => {
+    if (!confirm('Are you sure you want to remove your API key?')) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      await deleteApiKey();
+      setSuccess('API key removed successfully');
+      await loadApiKeyStatus();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove API key');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -183,6 +239,73 @@ export function Settings({ onClose }: SettingsProps) {
               >
                 {isSubmitting ? 'Logging out...' : 'Log out'}
               </button>
+
+              {/* API Key Section */}
+              <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">OpenRouter API Key</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  Required for Triage feature. Get your key from{' '}
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                    openrouter.ai/keys
+                  </a>
+                </p>
+
+                {apiKeyStatus?.is_set && !showApiKeyInput ? (
+                  <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 font-mono">{apiKeyStatus.masked_key}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowApiKeyInput(true)}
+                        className="text-xs text-blue-500 hover:underline"
+                      >
+                        Change
+                      </button>
+                      <button
+                        onClick={handleDeleteApiKey}
+                        disabled={isSubmitting}
+                        className="text-xs text-red-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      value={newApiKey}
+                      onChange={(e) => setNewApiKey(e.target.value)}
+                      placeholder="sk-or-v1-..."
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSetApiKey}
+                        disabled={isSubmitting || !newApiKey.trim()}
+                        className="flex-1 px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white rounded-lg font-medium"
+                      >
+                        {isSubmitting ? 'Saving...' : 'Save Key'}
+                      </button>
+                      {showApiKeyInput && apiKeyStatus?.is_set && (
+                        <button
+                          onClick={() => {
+                            setShowApiKeyInput(false);
+                            setNewApiKey('');
+                          }}
+                          className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             // Logged out state - login/signup form
@@ -247,6 +370,73 @@ export function Settings({ onClose }: SettingsProps) {
                 >
                   {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
                 </button>
+              </div>
+
+              {/* API Key Section for logged out users */}
+              <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">OpenRouter API Key (Optional)</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  Required for Triage feature. Get your key from{' '}
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                    openrouter.ai/keys
+                  </a>
+                </p>
+
+                {apiKeyStatus?.is_set && !showApiKeyInput ? (
+                  <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 font-mono">{apiKeyStatus.masked_key}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowApiKeyInput(true)}
+                        className="text-xs text-blue-500 hover:underline"
+                      >
+                        Change
+                      </button>
+                      <button
+                        onClick={handleDeleteApiKey}
+                        disabled={isSubmitting}
+                        className="text-xs text-red-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      value={newApiKey}
+                      onChange={(e) => setNewApiKey(e.target.value)}
+                      placeholder="sk-or-v1-..."
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSetApiKey}
+                        disabled={isSubmitting || !newApiKey.trim()}
+                        className="flex-1 px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white rounded-lg font-medium"
+                      >
+                        {isSubmitting ? 'Saving...' : 'Save Key'}
+                      </button>
+                      {showApiKeyInput && apiKeyStatus?.is_set && (
+                        <button
+                          onClick={() => {
+                            setShowApiKeyInput(false);
+                            setNewApiKey('');
+                          }}
+                          className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
