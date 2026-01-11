@@ -4,6 +4,7 @@ import { PhotoGrid } from './components/PhotoBrowser';
 import { ScoreViewer } from './components/ScoreViewer';
 import { FolderLibrary } from './components/FolderLibrary';
 import { Settings } from './components/Settings';
+import { TriageView } from './components/Triage/TriageView';
 import { usePhotos } from './hooks/usePhotos';
 import { checkHealth, getAuthStatus, getCredits, type AuthStatus } from './services/sidecar';
 import type { PhotoWithScore } from './types/photo';
@@ -12,6 +13,7 @@ function App() {
   const [sidecarReady, setSidecarReady] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithScore | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTriage, setShowTriage] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const {
     photos,
@@ -110,7 +112,10 @@ function App() {
   const scoredCount = photos.length - unscoredCount;
 
   return (
-    <Layout onSettingsClick={() => setShowSettings(true)}>
+    <Layout
+      onSettingsClick={() => setShowSettings(true)}
+      onTriageClick={() => setShowTriage(true)}
+    >
       {!sidecarReady ? (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
@@ -251,6 +256,9 @@ function App() {
 
       {/* Settings modal */}
       {showSettings && <Settings onClose={handleSettingsClose} />}
+
+      {/* Triage modal */}
+      {showTriage && <TriageView onClose={() => setShowTriage(false)} />}
     </Layout>
   );
 }
