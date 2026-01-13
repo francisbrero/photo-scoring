@@ -296,13 +296,44 @@ async def run_triage_background(job_id: str):
                         selected_paths_pass1.add(chunk_paths[idx])
 
             except Exception as e:
-                # On error, log and keep all photos from this grid
-                print(f"ERROR analyzing coarse grid: {e}")
+                # On error, try fallback mode if available
+                print(
+                    f"ERROR analyzing coarse grid with {'cloud' if use_cloud else 'local'} mode: {e}"
+                )
                 import traceback
 
                 traceback.print_exc()
-                for p in chunk_paths:
-                    selected_paths_pass1.add(p)
+
+                # Try fallback mode
+                fallback_coords = []
+                if use_cloud and use_local:
+                    # Cloud failed, try local
+                    print("Attempting fallback to local mode...")
+                    try:
+                        fallback_coords = await analyze_grid_local(
+                            grid_data,
+                            "coarse",
+                            config["criteria"],
+                            config["target"],
+                            openrouter_key,
+                        )
+                    except Exception as e2:
+                        print(f"Fallback also failed: {e2}")
+
+                if fallback_coords:
+                    # Fallback succeeded
+                    for coord in fallback_coords:
+                        row, col = coord
+                        idx = row * grid_size + col
+                        if idx < len(chunk_paths):
+                            selected_paths_pass1.add(chunk_paths[idx])
+                else:
+                    # Both modes failed - keep all photos from this grid as last resort
+                    print(
+                        "WARNING: Both analysis modes failed, keeping all photos from this grid"
+                    )
+                    for p in chunk_paths:
+                        selected_paths_pass1.add(p)
             finally:
                 # Clean up grid file
                 try:
@@ -390,13 +421,44 @@ async def run_triage_background(job_id: str):
                             selected_paths_final.add(chunk_paths[idx])
 
                 except Exception as e:
-                    # On error, log and keep all photos from this grid
-                    print(f"ERROR analyzing fine grid: {e}")
+                    # On error, try fallback mode if available
+                    print(
+                        f"ERROR analyzing fine grid with {'cloud' if use_cloud else 'local'} mode: {e}"
+                    )
                     import traceback
 
                     traceback.print_exc()
-                    for p in chunk_paths:
-                        selected_paths_final.add(p)
+
+                    # Try fallback mode
+                    fallback_coords = []
+                    if use_cloud and use_local:
+                        # Cloud failed, try local
+                        print("Attempting fallback to local mode...")
+                        try:
+                            fallback_coords = await analyze_grid_local(
+                                grid_data,
+                                "fine",
+                                config["criteria"],
+                                config["target"],
+                                openrouter_key,
+                            )
+                        except Exception as e2:
+                            print(f"Fallback also failed: {e2}")
+
+                    if fallback_coords:
+                        # Fallback succeeded
+                        for coord in fallback_coords:
+                            row, col = coord
+                            idx = row * grid_size + col
+                            if idx < len(chunk_paths):
+                                selected_paths_final.add(chunk_paths[idx])
+                    else:
+                        # Both modes failed - keep all photos from this grid as last resort
+                        print(
+                            "WARNING: Both analysis modes failed, keeping all photos from this grid"
+                        )
+                        for p in chunk_paths:
+                            selected_paths_final.add(p)
                 finally:
                     # Clean up grid file
                     try:
