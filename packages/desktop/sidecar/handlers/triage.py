@@ -275,7 +275,7 @@ async def run_triage_background(job_id: str):
                         "coarse",
                         config["criteria"],
                         config["target"],
-                        len(all_paths),
+                        total,
                         auth_token,
                     )
                 else:
@@ -295,8 +295,12 @@ async def run_triage_background(job_id: str):
                     if idx < len(chunk_paths):
                         selected_paths_pass1.add(chunk_paths[idx])
 
-            except Exception:
-                # On error, keep all photos from this grid
+            except Exception as e:
+                # On error, log and keep all photos from this grid
+                print(f"ERROR analyzing coarse grid: {e}")
+                import traceback
+
+                traceback.print_exc()
                 for p in chunk_paths:
                     selected_paths_pass1.add(p)
             finally:
@@ -365,7 +369,7 @@ async def run_triage_background(job_id: str):
                             "fine",
                             config["criteria"],
                             config["target"],
-                            len(all_paths),
+                            total,
                             auth_token,
                         )
                     else:
@@ -385,8 +389,12 @@ async def run_triage_background(job_id: str):
                         if idx < len(chunk_paths):
                             selected_paths_final.add(chunk_paths[idx])
 
-                except Exception:
-                    # On error, keep all photos from this grid
+                except Exception as e:
+                    # On error, log and keep all photos from this grid
+                    print(f"ERROR analyzing fine grid: {e}")
+                    import traceback
+
+                    traceback.print_exc()
                     for p in chunk_paths:
                         selected_paths_final.add(p)
                 finally:
@@ -427,9 +435,9 @@ async def analyze_grid_via_cloud(
     auth_token: str,
 ) -> list[tuple[int, int]]:
     """Analyze grid by calling cloud API (uses user's credits)."""
-    from .cloud_client import get_api_base_url
+    from .cloud_client import CLOUD_API_URL
 
-    api_url = get_api_base_url()
+    api_url = CLOUD_API_URL
 
     payload = {
         "grid_base64": grid_base64,
