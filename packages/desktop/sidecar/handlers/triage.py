@@ -235,15 +235,22 @@ async def run_triage_background(job_id: str):
             ]
             coarse_grids.append((grid_path, chunk_paths))
 
-        # Analyze grids via cloud API (uses user's credits)
+        # Analyze grids - try cloud API first (if authenticated), fall back to local API key
         selected_paths_pass1 = set()
 
-        # Get auth token
+        # Determine which mode to use
         from .auth import get_auth_token
 
         auth_token = get_auth_token()
-        if not auth_token:
-            raise RuntimeError("Not authenticated - please log in to use Triage")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+        use_cloud = bool(auth_token)
+        use_local = bool(openrouter_key)
+
+        if not use_cloud and not use_local:
+            raise RuntimeError(
+                "Please either log in (to use credits) or set an OpenRouter API key in Settings (for private mode)"
+            )
 
         for idx, (grid_path, chunk_paths) in enumerate(coarse_grids):
             job["progress"]["current_step"] = idx + 1
@@ -261,15 +268,24 @@ async def run_triage_background(job_id: str):
                 with open(grid_path, "rb") as f:
                     grid_data = base64.b64encode(f.read()).decode("utf-8")
 
-                # Analyze grid via cloud API
-                selected_coords = await analyze_grid_via_cloud(
-                    grid_data,
-                    "coarse",
-                    config["criteria"],
-                    config["target"],
-                    len(all_paths),
-                    auth_token,
-                )
+                # Analyze grid - use cloud if authenticated, else local
+                if use_cloud:
+                    selected_coords = await analyze_grid_via_cloud(
+                        grid_data,
+                        "coarse",
+                        config["criteria"],
+                        config["target"],
+                        len(all_paths),
+                        auth_token,
+                    )
+                else:
+                    selected_coords = await analyze_grid_local(
+                        grid_data,
+                        "coarse",
+                        config["criteria"],
+                        config["target"],
+                        openrouter_key,
+                    )
 
                 # Map coordinates back to file paths
                 grid_size = min(coarse_size, int(len(chunk_paths) ** 0.5) + 1)
@@ -342,15 +358,24 @@ async def run_triage_background(job_id: str):
                     with open(grid_path, "rb") as f:
                         grid_data = base64.b64encode(f.read()).decode("utf-8")
 
-                    # Analyze grid via cloud API
-                    selected_coords = await analyze_grid_via_cloud(
-                        grid_data,
-                        "fine",
-                        config["criteria"],
-                        config["target"],
-                        len(all_paths),
-                        auth_token,
-                    )
+                    # Analyze grid - use cloud if authenticated, else local
+                    if use_cloud:
+                        selected_coords = await analyze_grid_via_cloud(
+                            grid_data,
+                            "fine",
+                            config["criteria"],
+                            config["target"],
+                            len(all_paths),
+                            auth_token,
+                        )
+                    else:
+                        selected_coords = await analyze_grid_local(
+                            grid_data,
+                            "fine",
+                            config["criteria"],
+                            config["target"],
+                            openrouter_key,
+                        )
 
                     # Map coordinates back to file paths
                     grid_size = min(fine_size, int(len(chunk_paths) ** 0.5) + 1)
@@ -401,7 +426,7 @@ async def analyze_grid_via_cloud(
     photo_count: int,
     auth_token: str,
 ) -> list[tuple[int, int]]:
-    """Analyze grid by calling cloud API (uses user's credits, not local API key)."""
+    """Analyze grid by calling cloud API (uses user's credits)."""
     from .cloud_client import get_api_base_url
 
     api_url = get_api_base_url()
@@ -436,7 +461,97 @@ async def analyze_grid_via_cloud(
         result = response.json()
         return result["coordinates"]
 
-    # If all models fail, return empty (conservative)
+
+async def analyze_grid_local(
+    grid_base64: str,
+    pass_type: str,
+    criteria: str,
+    target: str,
+    openrouter_key: str,
+) -> list[tuple[int, int]]:
+    """Analyze grid locally using user's OpenRouter API key (private mode)."""
+    # Build prompt based on pass type
+    if pass_type == "coarse":
+        prompt = f"""You are selecting photos from a grid based on: {criteria}
+
+Target: Select approximately {target} of photos.
+
+Examine this grid and identify the coordinates of photos that match the criteria.
+
+Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
+
+Do not include any explanation or other text. Just the coordinates."""
+    else:  # fine
+        prompt = f"""You are selecting the BEST photos from a pre-filtered grid based on: {criteria}
+
+Target: Select approximately {target} of photos.
+
+These photos have already passed an initial filter. Now identify the absolute best ones.
+
+Output ONLY the coordinates (e.g., A1, C3, B2), separated by commas or spaces.
+
+Do not include any explanation or other text. Just the coordinates."""
+
+    # Models to try
+    models = ["qwen/qwen2.5-vl-72b-instruct", "google/gemini-2.5-flash"]
+
+    for model_id in models:
+        try:
+            payload = {
+                "model": model_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{grid_base64}"
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                "max_tokens": 1024,
+                "temperature": 0,
+            }
+
+            headers = {
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json",
+            }
+
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+
+                    # Parse coordinates
+                    coord_pattern = re.compile(r"\b([A-T])(\d{1,2})\b", re.IGNORECASE)
+                    matches = coord_pattern.findall(content)
+
+                    row_labels = "ABCDEFGHIJKLMNOPQRST"
+                    coords = []
+                    for letter, num in matches:
+                        letter_upper = letter.upper()
+                        if letter_upper in row_labels:
+                            row = row_labels.index(letter_upper)
+                            col = int(num) - 1
+                            coords.append((row, col))
+
+                    return coords
+
+        except Exception:
+            continue
+
+    # If all models fail, return empty
     return []
 
 
