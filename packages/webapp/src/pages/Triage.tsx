@@ -1,5 +1,3 @@
-import { ExternalLink } from 'lucide-react';
-
 export default function Triage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
@@ -66,7 +64,9 @@ export default function Triage() {
           className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 rounded-xl transition-colors shadow-lg shadow-blue-500/30"
         >
           Download Desktop App
-          <ExternalLink className="w-5 h-5" />
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
         </a>
 
         <p className="text-gray-400 text-sm mt-6">
