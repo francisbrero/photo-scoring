@@ -91,18 +91,18 @@ function App() {
     }
   }, [sidecarReady, initialized, setInitialized, getLastDirectory, loadPhotos]);
 
-  // Listen for menu events
-  useEffect(() => {
-    const unsubscribe = window.electron.on('menu:open-folder', handleOpenFolder);
-    return unsubscribe;
-  }, []);
-
   const handleOpenFolder = useCallback(async () => {
     const directory = await window.electron.dialog.openDirectory();
     if (directory) {
       loadPhotos(directory);
     }
   }, [loadPhotos]);
+
+  // Listen for menu events
+  useEffect(() => {
+    const unsubscribe = window.electron.on('menu:open-folder', handleOpenFolder);
+    return unsubscribe;
+  }, [handleOpenFolder]);
 
   const handleScoreAll = useCallback(() => {
     scoreAllPhotos();

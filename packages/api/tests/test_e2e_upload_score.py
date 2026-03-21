@@ -13,7 +13,7 @@ class TestSchemaCompatibility:
     """Tests to verify code matches database schema."""
 
     def get_migration_columns(self, table_name: str) -> set[str]:
-        """Extract column names from a migration file."""
+        """Extract column names from migration files, including ALTER TABLE additions."""
         migration_files = {
             "scored_photos": "003_scored_photos.sql",
             "credits": "001_credits.sql",
@@ -54,6 +54,17 @@ class TestSchemaCompatibility:
                 )
                 if match:
                     columns.add(match.group(1).lower())
+
+        # Also scan all migration files for ALTER TABLE ADD COLUMN on this table
+        migrations_dir = Path(__file__).parent.parent / "migrations"
+        for migration_file in sorted(migrations_dir.glob("*.sql")):
+            sql = migration_file.read_text()
+            for alter_match in re.finditer(
+                rf"ALTER TABLE\s+{table_name}\s+ADD\s+COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)",
+                sql,
+                re.IGNORECASE,
+            ):
+                columns.add(alter_match.group(1).lower())
 
         return columns
 
@@ -187,12 +198,16 @@ class TestMigrationSyntax:
             path = migrations_dir / migration
             assert path.exists(), f"Migration file not found: {migration}"
 
-    def test_migrations_have_create_table(self):
-        """Verify each migration creates a table."""
+    def test_migrations_have_valid_ddl(self):
+        """Verify each migration contains valid DDL (CREATE TABLE or ALTER TABLE)."""
         migrations_dir = Path(__file__).parent.parent / "migrations"
 
         for migration_file in migrations_dir.glob("*.sql"):
-            content = migration_file.read_text()
-            assert "CREATE TABLE" in content.upper(), (
-                f"Migration {migration_file.name} doesn't contain CREATE TABLE"
+            content = migration_file.read_text().upper()
+            has_create = "CREATE TABLE" in content
+            has_alter = "ALTER TABLE" in content
+            has_create_function = "CREATE OR REPLACE FUNCTION" in content
+            assert has_create or has_alter or has_create_function, (
+                f"Migration {migration_file.name} doesn't contain "
+                f"CREATE TABLE, ALTER TABLE, or CREATE FUNCTION"
             )

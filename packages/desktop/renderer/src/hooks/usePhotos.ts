@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import type { PhotoWithScore } from '../types/photo';
 import { discoverPhotos, getThumbnail, scorePhoto, getCachedScores } from '../services/sidecar';
 
@@ -76,9 +76,6 @@ export function usePhotos() {
 
     try {
       const images = await discoverPhotos(directory);
-
-      // Create a Set of image_ids for this directory to validate updates
-      const imageIds = new Set(images.map((img) => img.image_id));
 
       // Initialize photos
       const initialPhotos = images.map((img) => ({ ...img, thumbnail: undefined, score: undefined }));
