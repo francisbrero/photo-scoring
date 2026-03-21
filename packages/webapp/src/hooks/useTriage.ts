@@ -25,6 +25,7 @@ interface UseTriageReturn {
   job: TriageJob | null;
   status: TriageStatus | null;
   results: TriageResults | null;
+  isDownloading: boolean;
   error: string | null;
 
   // Actions
@@ -34,7 +35,7 @@ interface UseTriageReturn {
   pollStatus: (jobId: string) => Promise<TriageStatus | null>;
   getResults: (jobId: string) => Promise<TriageResults | null>;
   proceedToScoring: (jobId: string, photoIds?: string[]) => Promise<ProceedResponse | null>;
-  downloadSelected: (jobId: string) => void;
+  downloadSelected: (jobId: string) => Promise<void>;
   cancelTriage: (jobId: string) => Promise<void>;
   reset: () => void;
 }
@@ -50,6 +51,7 @@ export function useTriage(): UseTriageReturn {
   const [job, setJob] = useState<TriageJob | null>(null);
   const [status, setStatus] = useState<TriageStatus | null>(null);
   const [results, setResults] = useState<TriageResults | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasCheckedActiveJobs = useRef(false);
@@ -348,12 +350,42 @@ export function useTriage(): UseTriageReturn {
   );
 
   const downloadSelected = useCallback(
-    (jobId: string) => {
+    async (jobId: string) => {
       if (!session?.access_token) return;
 
-      // Open download in new window/tab
-      const url = `/api/triage/${jobId}/download`;
-      window.open(url, '_blank');
+      setIsDownloading(true);
+      setError(null);
+
+      try {
+        const response = await apiFetch(`/api/triage/${jobId}/download`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to download');
+        }
+
+        const blob = await response.blob();
+
+        // Extract filename from Content-Disposition header
+        const disposition = response.headers.get('Content-Disposition');
+        const filenameMatch = disposition?.match(/filename=(.+)/);
+        const filename = filenameMatch?.[1] || `triage_${jobId.slice(0, 8)}_selected.zip`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Download failed');
+      } finally {
+        setIsDownloading(false);
+      }
     },
     [session?.access_token]
   );
@@ -408,6 +440,7 @@ export function useTriage(): UseTriageReturn {
     isUploading,
     uploadProgress,
     isProcessing,
+    isDownloading,
     isLoadingActiveJobs,
     activeJobs,
     job,
