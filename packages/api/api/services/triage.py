@@ -538,12 +538,15 @@ class TriageService:
             thumbnails = self._download_thumbnails_streaming(batch_photos, thumbnail_size)
 
             logger.info(
-                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: created {len(thumbnails)} thumbnails out of {len(batch_photos)} photos"
+                f"[TRIAGE] Grid {grid_idx + 1}/{num_grids}: "
+                f"created {len(thumbnails)} thumbnails "
+                f"out of {len(batch_photos)} photos"
             )
 
             if not thumbnails:
                 logger.error(
-                    f"[TRIAGE] CRITICAL: No thumbnails created for grid {grid_idx + 1}! All downloads failed."
+                    f"[TRIAGE] CRITICAL: No thumbnails created "
+                    f"for grid {grid_idx + 1}! All downloads failed."
                 )
                 continue
 
@@ -581,7 +584,9 @@ class TriageService:
                     logger.info(f"[TRIAGE] Calling model: {model_id}")
                     coords = await self._query_model(grid_image, prompt, model_id)
                     logger.info(
-                        f"[TRIAGE] Model {model_id} returned {len(coords)} coordinates: {list(coords)[:10]}"
+                        f"[TRIAGE] Model {model_id} returned "
+                        f"{len(coords)} coordinates: "
+                        f"{list(coords)[:10]}"
                     )
                     union_coords.update(coords)
                     api_calls += 1
@@ -594,7 +599,8 @@ class TriageService:
 
             # Map coordinates to photo IDs
             logger.info(
-                f"[TRIAGE] Union has {len(union_coords)} coords, coord_to_id has {len(coord_to_id)} mappings"
+                f"[TRIAGE] Union has {len(union_coords)} coords, "
+                f"coord_to_id has {len(coord_to_id)} mappings"
             )
             mapped_count = 0
             for coord in union_coords:
@@ -605,7 +611,9 @@ class TriageService:
                 else:
                     logger.warning(f"[TRIAGE] Coord {coord_upper} not in mapping")
             logger.info(
-                f"[TRIAGE] Grid {grid_idx + 1}: mapped {mapped_count} coords to photo IDs, total selected: {len(selected_ids)}"
+                f"[TRIAGE] Grid {grid_idx + 1}: "
+                f"mapped {mapped_count} coords to photo IDs, "
+                f"total selected: {len(selected_ids)}"
             )
 
             # Update progress

@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 import time
 import uuid
@@ -25,7 +24,12 @@ from supabase import create_client
 # Config
 API_URL = "https://photo-score-api.onrender.com"
 SUPABASE_URL = "https://jbgkafsmdtotdrrgitzw.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpiZ2thZnNtZHRvdGRycmdpdHp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2NjYxOTAsImV4cCI6MjA1MTI0MjE5MH0.J_0y0ML28ibHvtfGD2fDRBDzQtLHhNIgGpKPVPz6Grc"
+SUPABASE_ANON_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpiZ2thZnNtZHRvdGRycmdpdHp3"
+    "Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2NjYxOTAsImV4cCI6MjA1MTI0"
+    "MjE5MH0.J_0y0ML28ibHvtfGD2fDRBDzQtLHhNIgGpKPVPz6Grc"
+)
 TEST_PHOTOS_DIR = Path(__file__).parent.parent.parent.parent / "test_photos"
 BUCKET = "photos"
 
@@ -61,7 +65,7 @@ def upload_photos(supabase, user_id: str, job_id: str, photos_dir: Path, limit: 
         elif ext == ".webp":
             content_type = "image/webp"
 
-        result = supabase.storage.from_(BUCKET).upload(
+        supabase.storage.from_(BUCKET).upload(
             storage_path, data, file_options={"content-type": content_type}
         )
 
@@ -192,7 +196,7 @@ def main():
     print(f"\nUploaded {len(uploaded)} photos")
 
     # Save for debugging
-    with open(f"/tmp/triage_files_test.json", "w") as f:
+    with open("/tmp/triage_files_test.json", "w") as f:
         json.dump(uploaded, f, indent=2)
 
     # Start triage

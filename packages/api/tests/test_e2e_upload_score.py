@@ -208,5 +208,6 @@ class TestMigrationSyntax:
             has_alter = "ALTER TABLE" in content
             has_create_function = "CREATE OR REPLACE FUNCTION" in content
             assert has_create or has_alter or has_create_function, (
-                f"Migration {migration_file.name} doesn't contain CREATE TABLE, ALTER TABLE, or CREATE FUNCTION"
+                f"Migration {migration_file.name} doesn't contain "
+                f"CREATE TABLE, ALTER TABLE, or CREATE FUNCTION"
             )
