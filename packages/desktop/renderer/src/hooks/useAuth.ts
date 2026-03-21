@@ -20,15 +20,12 @@ export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
     session: null,
-    isLoading: true,
+    isLoading: !!supabase,
     credits: null,
   });
 
   useEffect(() => {
-    if (!supabase) {
-      setState((prev) => ({ ...prev, isLoading: false }));
-      return;
-    }
+    if (!supabase) return;
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {

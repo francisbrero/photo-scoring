@@ -29,17 +29,20 @@ export function Layout({
 
   // Track scroll position for floating header on home page
   useEffect(() => {
-    if (!isHomePage) {
-      setScrolled(false);
-      return;
-    }
+    if (!isHomePage) return;
 
     const handleScroll = () => {
       setScrolled(window.scrollY > 100);
     };
 
+    // Reset scroll state when entering home page
+    handleScroll();
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      setScrolled(false);
+    };
   }, [isHomePage]);
 
   const handleSignOut = async () => {
