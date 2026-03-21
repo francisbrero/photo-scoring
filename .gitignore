@@ -2,6 +2,12 @@
 .env
 .env.local
 
+# Node
+node_modules/
+
+# Electron build output
+release/
+
 # Python
 __pycache__/
 *.py[cod]
