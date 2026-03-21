@@ -58,7 +58,7 @@ export default function Triage() {
         </div>
 
         <a
-          href="https://github.com/your-repo/releases/latest"
+          href="https://github.com/francisbrero/photo-scoring/releases/latest"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 rounded-xl transition-colors shadow-lg shadow-blue-500/30"
