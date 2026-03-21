@@ -31,7 +31,7 @@ This is **required** because:
 - Test and lint commands require dev dependencies
 - Without this step, `pytest`, `ruff`, etc. will fail
 
-### Step 4: Research & Plan
+### Step 4: Research & Plan (MANDATORY — do NOT skip)
 1. Analyze issue requirements thoroughly
 2. Search codebase for affected files using Grep/Glob
 3. Check relevant skills in `.claude/skills/` for patterns:
@@ -39,12 +39,15 @@ This is **required** because:
    - `runbooks/` - Step-by-step procedures
    - `reference/` - Quick lookup information
 4. Identify dependencies and integration points
-5. Create implementation plan
-6. Present plan to user for review before proceeding
+5. Create implementation plan covering:
+   - Files to change and why
+   - Summary of each change
+   - Any risks or trade-offs
+6. Use `EnterPlanMode` to present the plan to the user
 
-**IMPORTANT**: Wait for user approval of the plan before implementing.
+**MANDATORY**: You MUST present a plan and receive explicit user approval before writing any code or making any changes. This applies to ALL issues regardless of size or perceived simplicity. Do NOT skip this step even for one-line fixes. No exceptions.
 
-### Step 5: Implementation
+### Step 5: Implementation (only after plan is approved)
 For each phase:
 1. Implement changes following project patterns:
    - Check existing code in `photo_score/` for conventions
