@@ -15,6 +15,9 @@ export interface ElectronAPI {
       buttons?: string[];
     }) => Promise<{ response: number }>;
   };
+  shell: {
+    showItemInFolder: (fullPath: string) => void;
+  };
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
 }
 

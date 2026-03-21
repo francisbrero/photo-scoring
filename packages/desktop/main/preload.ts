@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, shell } from 'electron';
 
 export interface ElectronAPI {
   sidecar: {
@@ -17,6 +17,9 @@ export interface ElectronAPI {
       buttons?: string[];
     }) => Promise<{ response: number }>;
   };
+  shell: {
+    showItemInFolder: (fullPath: string) => void;
+  };
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
 }
 
@@ -30,6 +33,9 @@ const electronAPI: ElectronAPI = {
     openFile: (filters) => ipcRenderer.invoke('dialog:openFile', filters),
     saveFile: (defaultPath, filters) => ipcRenderer.invoke('dialog:saveFile', defaultPath, filters),
     showMessage: (options) => ipcRenderer.invoke('dialog:showMessage', options),
+  },
+  shell: {
+    showItemInFolder: (fullPath: string) => shell.showItemInFolder(fullPath),
   },
   on: (channel: string, callback: (...args: unknown[]) => void) => {
     const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);
