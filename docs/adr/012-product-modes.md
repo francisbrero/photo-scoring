@@ -24,7 +24,7 @@ Define three named product modes with explicit data-flow guarantees:
 |--------|--------|
 | **Name** | Private Mode |
 | **Where image bytes go** | Sent directly to OpenRouter for inference |
-| **What's persisted in cloud** | Attributes + hashes (optional sync to Supabase) |
+| **What's persisted in cloud** | Attributes + hashes (local only; cloud sync is planned but not yet implemented) |
 | **Original photos stored remotely?** | No |
 | **Who holds the API key** | User |
 
@@ -45,7 +45,7 @@ Define three named product modes with explicit data-flow guarantees:
 | **Name** | Web Mode |
 | **Where image bytes go** | Uploaded to Supabase Storage, processed server-side |
 | **What's persisted in cloud** | Original photos + attributes |
-| **Original photos stored remotely?** | Yes — retained temporarily for processing and results |
+| **Original photos stored remotely?** | Yes — stored to support results; user can delete at any time |
 | **Who holds the API key** | PhotoScorer (server-side) |
 
 ### Copy Guidelines

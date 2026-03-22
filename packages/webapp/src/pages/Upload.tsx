@@ -326,7 +326,7 @@ export function Upload() {
           Drop your photos here or click to select. Each photo uses 1 credit.
         </p>
         <p className="text-sm text-[var(--text-muted)] mt-2">
-          Your photos are uploaded to our servers for AI analysis. Photos are retained temporarily to support processing and results, then cleaned up.
+          Your photos are uploaded to our servers for AI analysis and stored to support your results. You can delete your photos at any time from the dashboard.
         </p>
       </div>
 

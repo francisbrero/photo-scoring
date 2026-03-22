@@ -95,8 +95,8 @@ export function About() {
                   sent to AI providers (OpenRouter) for analysis and is not retained after processing.
                 </li>
                 <li>
-                  <strong>Web upload:</strong> Photos are uploaded to our cloud servers for processing.
-                  They are retained temporarily to support analysis and results, then cleaned up.
+                  <strong>Web upload:</strong> Photos are uploaded to our cloud servers for processing
+                  and stored to support your results. You can delete your photos at any time.
                 </li>
               </ul>
               <p className="mt-2">
@@ -134,7 +134,7 @@ export function About() {
                 <strong>Desktop app:</strong> Photos are never stored on our servers. Image data is
                 sent to AI providers for analysis only.{' '}
                 <strong>Web app:</strong> Photos are uploaded to our cloud servers for processing and
-                retained temporarily, then cleaned up.
+                stored to support your results. You can delete them at any time.
               </p>
             </div>
 

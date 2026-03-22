@@ -15,14 +15,14 @@ PhotoScorer operates in three distinct modes with different privacy and data-han
 
 | # | Mode | Where image bytes go | What's persisted in cloud | Original photos stored remotely? |
 |---|------|---------------------|--------------------------|----------------------------------|
-| 1 | **Private Mode** (Desktop + own API key) | Sent directly to OpenRouter for inference | Attributes + hashes (optional sync) | No |
+| 1 | **Private Mode** (Desktop + own API key) | Sent directly to OpenRouter for inference | Attributes + hashes | No |
 | 2 | **Credit Mode** (Desktop + cloud credits) | Sent to PhotoScorer API, proxied to OpenRouter | Attributes + hashes | No |
-| 3 | **Web Mode** (Web upload/triage) | Uploaded to Supabase Storage, processed server-side | Original photos + attributes | Yes (temporarily) |
+| 3 | **Web Mode** (Web upload/triage) | Uploaded to Supabase Storage, processed server-side | Original photos + attributes | Yes (user-deletable) |
 
 **Key distinctions:**
 - In all modes, image data is sent to an AI provider (OpenRouter) for analysis. No mode is fully "local-only."
 - Modes 1 and 2 never store original photos in the cloud — only attributes and hashes are persisted.
-- Mode 3 uploads original photos to cloud storage for server-side processing. Photos are retained temporarily to support processing and results, then cleaned up.
+- Mode 3 uploads original photos to cloud storage for server-side processing. Photos are stored to support results and can be deleted by the user at any time.
 
 See [ADR-012: Explicit Product Modes](docs/adr/012-product-modes.md) for the full decision record.
 
@@ -485,7 +485,7 @@ Python sidecar bundled with PyInstaller.
 
 ## Security Considerations
 
-1. **API Key Protection**: OpenRouter key never exposed to clients; all inference proxied through cloud
+1. **API Key Protection**: In Credit and Web modes, the OpenRouter key is server-side only and never exposed to clients. In Private Mode, the user supplies their own key which is stored locally on their device
 2. **Image Privacy**: Varies by mode — desktop modes (Private/Credit) never store photos in the cloud but send image data to AI providers for analysis; Web Mode uploads photos to cloud storage temporarily for processing
 3. **Rate Limiting**: Per-user rate limits on inference endpoint
 4. **Credit Validation**: Balance checked before every inference call
