@@ -15,7 +15,7 @@ PhotoScorer operates in three distinct modes with different privacy and data-han
 
 | # | Mode | Where image bytes go | What's persisted in cloud | Original photos stored remotely? |
 |---|------|---------------------|--------------------------|----------------------------------|
-| 1 | **Private Mode** (Desktop + own API key) | Sent directly to OpenRouter for inference | Attributes + hashes | No |
+| 1 | **Private Mode** (Desktop + own API key) | Sent directly to OpenRouter for triage; scoring still proxied through cloud API | Attributes + hashes | No |
 | 2 | **Credit Mode** (Desktop + cloud credits) | Sent to PhotoScorer API, proxied to OpenRouter | Attributes + hashes | No |
 | 3 | **Web Mode** (Web upload/triage) | Uploaded to Supabase Storage, processed server-side | Original photos + attributes | Yes (user-deletable) |
 
@@ -486,7 +486,7 @@ Python sidecar bundled with PyInstaller.
 ## Security Considerations
 
 1. **API Key Protection**: In Credit and Web modes, the OpenRouter key is server-side only and never exposed to clients. In Private Mode, the user supplies their own key which is stored locally on their device
-2. **Image Privacy**: Varies by mode — desktop modes (Private/Credit) never store photos in the cloud but send image data to AI providers for analysis; Web Mode uploads photos to cloud storage temporarily for processing
+2. **Image Privacy**: Varies by mode — desktop modes (Private/Credit) never store photos in the cloud but send image data to AI providers for analysis; Web Mode uploads photos to cloud storage for processing and retains them until the user deletes them
 3. **Rate Limiting**: Per-user rate limits on inference endpoint
 4. **Credit Validation**: Balance checked before every inference call
 5. **Row-Level Security**: Supabase RLS policies ensure users only access their own data

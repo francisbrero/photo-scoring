@@ -23,10 +23,12 @@ Define three named product modes with explicit data-flow guarantees:
 | Aspect | Detail |
 |--------|--------|
 | **Name** | Private Mode |
-| **Where image bytes go** | Sent directly to OpenRouter for inference |
+| **Where image bytes go** | Sent directly to OpenRouter for inference (triage only today; scoring still routes through the cloud API) |
 | **What's persisted in cloud** | Attributes + hashes (local only; cloud sync is planned but not yet implemented) |
 | **Original photos stored remotely?** | No |
 | **Who holds the API key** | User |
+
+> **Implementation note:** The direct-to-OpenRouter path currently only covers triage (`analyze_grid_local`). Individual photo scoring still requires authentication and uses the cloud inference proxy. Extending Private Mode to scoring is planned.
 
 ### Mode 2: Desktop + Cloud Credits
 
