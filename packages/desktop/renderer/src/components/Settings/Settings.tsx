@@ -244,7 +244,7 @@ export function Settings({ onClose }: SettingsProps) {
               <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
                 <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">OpenRouter API Key (Optional)</h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  For private mode: use your own API key instead of credits. Photos stay on your device.{' '}
+                  For private mode: use your own API key instead of credits. Photos are not stored in the cloud. Image data is sent to OpenRouter for AI analysis.{' '}
                   <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
                     Get key
                   </a>

@@ -325,6 +325,9 @@ export function Upload() {
         <p className="text-[var(--text-secondary)]">
           Drop your photos here or click to select. Each photo uses 1 credit.
         </p>
+        <p className="text-sm text-[var(--text-muted)] mt-2">
+          Your photos are uploaded to our servers for AI analysis. Photos are retained temporarily to support processing and results, then cleaned up.
+        </p>
       </div>
 
       {/* Drop Zone */}

@@ -86,10 +86,22 @@ export function About() {
             <div>
               <h3 className="font-semibold text-[var(--text-primary)] mb-2">4. Photo Uploads</h3>
               <p>
-                You retain all rights to the photos you upload. By uploading photos, you grant us a
-                limited license to process and analyze them for the purpose of providing our
-                service. We do not share your photos with third parties except as necessary to
-                provide the service (e.g., AI processing).
+                You retain all rights to your photos. How your photo data is handled depends on how
+                you use the service:
+              </p>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>
+                  <strong>Desktop app:</strong> Your photos are not stored in the cloud. Image data is
+                  sent to AI providers (OpenRouter) for analysis and is not retained after processing.
+                </li>
+                <li>
+                  <strong>Web upload:</strong> Photos are uploaded to our cloud servers for processing.
+                  They are retained temporarily to support analysis and results, then cleaned up.
+                </li>
+              </ul>
+              <p className="mt-2">
+                We do not share your photos with third parties except as necessary to provide the
+                service (e.g., AI processing via OpenRouter).
               </p>
             </div>
 
@@ -117,6 +129,12 @@ export function About() {
                 We collect and process personal data as described in our privacy practices. We use
                 industry-standard security measures to protect your data. Your photos are processed
                 securely and are not used to train AI models without your explicit consent.
+              </p>
+              <p className="mt-2">
+                <strong>Desktop app:</strong> Photos are never stored on our servers. Image data is
+                sent to AI providers for analysis only.{' '}
+                <strong>Web app:</strong> Photos are uploaded to our cloud servers for processing and
+                retained temporarily, then cleaned up.
               </p>
             </div>
 
