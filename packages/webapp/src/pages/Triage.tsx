@@ -40,6 +40,7 @@ export default function Triage() {
     uploadProgress,
     isProcessing,
     isDownloading,
+    downloadError,
     isLoadingActiveJobs,
     activeJobs,
     job,
@@ -51,7 +52,7 @@ export default function Triage() {
     downloadSelected,
     cancelTriage,
     proceedToScoring,
-    reset,
+    reset: hookReset,
   } = useTriage();
 
   // Local state for file selection step
@@ -135,6 +136,19 @@ export default function Triage() {
       return next;
     });
   }, []);
+
+  const clearFiles = useCallback(() => {
+    setFiles((prev) => {
+      prev.forEach((f) => URL.revokeObjectURL(f.preview));
+      return [];
+    });
+  }, []);
+
+  // Combined reset: clears hook state + local file state
+  const reset = useCallback(() => {
+    hookReset();
+    clearFiles();
+  }, [hookReset, clearFiles]);
 
   const handleStart = async () => {
     if (files.length === 0) return;
@@ -275,6 +289,13 @@ export default function Triage() {
             New Triage
           </button>
         </div>
+
+        {/* Download Error (inline, doesn't hide results) */}
+        {downloadError && (
+          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-center">
+            <p className="text-red-400 text-sm">{downloadError}</p>
+          </div>
+        )}
       </div>
     );
   }

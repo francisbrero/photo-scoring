@@ -26,6 +26,7 @@ interface UseTriageReturn {
   status: TriageStatus | null;
   results: TriageResults | null;
   isDownloading: boolean;
+  downloadError: string | null;
   error: string | null;
 
   // Actions
@@ -52,6 +53,7 @@ export function useTriage(): UseTriageReturn {
   const [status, setStatus] = useState<TriageStatus | null>(null);
   const [results, setResults] = useState<TriageResults | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasCheckedActiveJobs = useRef(false);
@@ -258,7 +260,14 @@ export function useTriage(): UseTriageReturn {
           setError(statusData.error_message || 'Triage failed');
           setActiveJobs((prev) => prev.filter((j) => j.job_id !== jobId));
         } else {
-          // Job still processing - resume polling
+          // Job still processing - restore job reference and resume polling
+          setJob({
+            job_id: jobId,
+            status: statusData.status,
+            photo_count: statusData.total_input,
+            credits_deducted: 0,
+            estimated_grids: 0,
+          });
           setIsProcessing(true);
           startPolling(jobId);
         }
@@ -354,7 +363,7 @@ export function useTriage(): UseTriageReturn {
       if (!session?.access_token) return;
 
       setIsDownloading(true);
-      setError(null);
+      setDownloadError(null);
 
       try {
         const response = await apiFetch(`/api/triage/${jobId}/download`, {
@@ -382,7 +391,7 @@ export function useTriage(): UseTriageReturn {
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Download failed');
+        setDownloadError(err instanceof Error ? err.message : 'Download failed');
       } finally {
         setIsDownloading(false);
       }
@@ -432,6 +441,7 @@ export function useTriage(): UseTriageReturn {
     setJob(null);
     setStatus(null);
     setResults(null);
+    setDownloadError(null);
     setError(null);
   }, []);
 
@@ -441,6 +451,7 @@ export function useTriage(): UseTriageReturn {
     uploadProgress,
     isProcessing,
     isDownloading,
+    downloadError,
     isLoadingActiveJobs,
     activeJobs,
     job,
