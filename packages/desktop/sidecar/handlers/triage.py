@@ -4,7 +4,6 @@ import base64
 import io
 import os
 import re
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Optional

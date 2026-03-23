@@ -208,7 +208,7 @@ class UXSmokeTest:
         )
         if r.status_code == 200:
             data = r.json()
-            return True, f"Custom weights applied", data
+            return True, "Custom weights applied", data
         return False, f"Expected 200, got {r.status_code}", None
 
     # ==================== Score Direct Tests ====================
@@ -299,7 +299,7 @@ class UXSmokeTest:
             tests.append(("Score Direct", lambda: self.test_score_direct(image_path)))
 
         print(f"\n{'=' * 60}")
-        print(f"Photo Scoring API - UX Smoke Tests")
+        print("Photo Scoring API - UX Smoke Tests")
         print(f"{'=' * 60}")
         print(f"Target: {self.base_url}")
         print(f"Auth: {'Yes' if self.token else 'No'}")

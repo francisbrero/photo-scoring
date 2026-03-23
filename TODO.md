@@ -35,9 +35,9 @@ Goal: make the product reliable and useful for private/self-hosted use without p
 ### Do Now
 
 - [x] #85 Fix webapp triage route build break and invalid desktop download CTA (`S`)
-- [ ] #89 Repair desktop TypeScript project references so typecheck passes (`M`)
-- [ ] #91 Authenticate triage ZIP downloads in the web client (`S`)
-- [ ] #87 Extend CI to cover API, webapp, and desktop packages and fail on broken checks (`M`)
+- [x] #89 Repair desktop TypeScript project references so typecheck passes (`M`)
+- [x] #91 Authenticate triage ZIP downloads in the web client (`S`)
+- [x] #87 Extend CI to cover API, webapp, and desktop packages and fail on broken checks (`M`)
 - [ ] #93 Define explicit product modes for desktop-private and web-cloud processing (`M`)
 - [ ] #7 Define picture storage strategy (`M`)
 - [ ] #35 Attribute sync endpoints for desktop-cloud sync (`L`)

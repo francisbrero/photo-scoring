@@ -136,13 +136,11 @@ def delete_duplicates(supabase, duplicates: dict[str, list[dict]], dry_run: bool
         to_delete = [p for p in photos if p["id"] != keep["id"]]
 
         print(f"\n  Group {key}:")
-        print(
-            f"    Keeping: {keep['id']} (score: {keep.get('final_score')}, created: {keep['created_at']})"
-        )
+        score = keep.get("final_score")
+        print(f"    Keeping: {keep['id']} (score: {score}, created: {keep['created_at']})")
         for p in to_delete:
-            print(
-                f"    Deleting: {p['id']} (score: {p.get('final_score')}, created: {p['created_at']})"
-            )
+            score = p.get("final_score")
+            print(f"    Deleting: {p['id']} (score: {score}, created: {p['created_at']})")
             ids_to_delete.append(p["id"])
             storage_to_delete.append(p["storage_path"])
 

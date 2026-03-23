@@ -31,6 +31,9 @@ sidecar = [
 [project.scripts]
 photo-score = "photo_score.cli:app"
 
+[tool.ruff]
+extend-exclude = ["packages"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

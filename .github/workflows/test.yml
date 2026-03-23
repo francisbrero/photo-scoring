@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   pull_request:
@@ -7,9 +7,8 @@ on:
     branches: [master, main, develop]
 
 jobs:
-  test:
+  root-test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,15 +20,15 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: |
-          uv venv
-          uv pip install -e ".[dev]"
+        run: uv sync --dev
 
       - name: Run tests
-        run: |
-          uv run pytest --cov=photo_score --cov-report=xml --cov-report=term-missing
+        run: uv run pytest --cov=photo_score --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -39,9 +38,8 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  lint:
+  root-lint:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,18 +51,155 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install dependencies
-        run: |
-          uv venv
-          uv pip install -e ".[dev]"
+        run: uv sync --dev
 
       - name: Check formatting with ruff
-        run: |
-          uv run ruff format --check .
-        continue-on-error: true
+        run: uv run ruff format --check .
 
       - name: Lint with ruff
-        run: |
-          uv run ruff check .
-        continue-on-error: true
+        run: uv run ruff check .
+
+  api-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "packages/api/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -v
+
+  api-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "packages/api/uv.lock"
+
+      - name: Check formatting with ruff
+        run: uvx ruff format --check .
+
+      - name: Lint with ruff
+        run: uvx ruff check .
+
+  webapp-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/webapp
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "packages/webapp/package-lock.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+  desktop-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/desktop
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "packages/desktop/package-lock.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+  sidecar-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/desktop/sidecar
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "packages/desktop/sidecar/uv.lock"
+
+      - name: Install sidecar dependencies
+        run: uv sync --dev
+
+      - name: Install root photo-score package
+        run: uv pip install -e ../../../
+
+      - name: Check formatting with ruff
+        run: uvx ruff format --check .
+
+      - name: Lint with ruff
+        run: uvx ruff check .
+
+      - name: Smoke-test FastAPI app import
+        run: uv run python -c "from server import app"

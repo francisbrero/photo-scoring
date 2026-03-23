@@ -28,6 +28,10 @@ Before making significant changes, verify alignment with these decisions:
 | [007](docs/adr/007-supabase-authentication.md) | Supabase JWT + RLS | Custom auth, session-based auth |
 | [008](docs/adr/008-yaml-configuration.md) | YAML config with Pydantic | Database configs, env var configs for weights |
 | [009](docs/adr/009-grid-triage.md) | Grid-based triage for large collections | Single-pass only, intersection consensus, per-image API calls for triage |
+| [010](docs/adr/010-supabase-claude-code-integration.md) | Supabase Claude Code integration | Bypassing Supabase for Claude Code workflows |
+| [011](docs/adr/011-triage-memory-optimization.md) | Triage memory optimization | Loading all photos into memory, unoptimized grid processing |
+| [012](docs/adr/012-product-modes.md) | Explicit product modes with data-flow docs | Blanket "images never leave device" claims, missing upload disclosures |
+| [013](docs/adr/013-background-job-processing.md) | Database-backed queue for background jobs | In-memory background tasks only, no persistence |
 
 ## Enforcement Checklist
 

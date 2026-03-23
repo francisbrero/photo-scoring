@@ -4,10 +4,27 @@ This document describes the architecture for Photo Scoring, supporting both a st
 
 ## Design Principles
 
-1. **Images never leave the device** - Only SHA256 hashes and extracted attributes sync to cloud
+1. **Image privacy varies by mode** — see [Product Modes](#product-modes) below for per-mode data-flow details
 2. **Inference once, score many** - Expensive vision model calls are cached; scoring/recommendations run from cached attributes
 3. **Offline-first** - Desktop app works fully offline once images are scored
 4. **Cloud-optional** - Cloud sync enables cross-device history, aggregate recommendations, and backup
+
+## Product Modes
+
+PhotoScorer operates in three distinct modes with different privacy and data-handling profiles:
+
+| # | Mode | Where image bytes go | What's persisted in cloud | Original photos stored remotely? |
+|---|------|---------------------|--------------------------|----------------------------------|
+| 1 | **Private Mode** (Desktop + own API key) | Sent directly to OpenRouter for triage; scoring still proxied through cloud API | Attributes + hashes | No |
+| 2 | **Credit Mode** (Desktop + cloud credits) | Sent to PhotoScorer API, proxied to OpenRouter | Attributes + hashes | No |
+| 3 | **Web Mode** (Web upload/triage) | Uploaded to Supabase Storage, processed server-side | Original photos + attributes | Yes (user-deletable) |
+
+**Key distinctions:**
+- In all modes, image data is sent to an AI provider (OpenRouter) for analysis. No mode is fully "local-only."
+- Modes 1 and 2 never store original photos in the cloud — only attributes and hashes are persisted.
+- Mode 3 uploads original photos to cloud storage for server-side processing. Photos are stored to support results and can be deleted by the user at any time.
+
+See [ADR-012: Explicit Product Modes](docs/adr/012-product-modes.md) for the full decision record.
 
 ## Key Decisions
 
@@ -468,8 +485,8 @@ Python sidecar bundled with PyInstaller.
 
 ## Security Considerations
 
-1. **API Key Protection**: OpenRouter key never exposed to clients; all inference proxied through cloud
-2. **Image Privacy**: Images never uploaded; only hashes and extracted attributes
+1. **API Key Protection**: In Credit and Web modes, the OpenRouter key is server-side only and never exposed to clients. In Private Mode, the user supplies their own key which is stored locally on their device
+2. **Image Privacy**: Varies by mode — desktop modes (Private/Credit) never store photos in the cloud but send image data to AI providers for analysis; Web Mode uploads photos to cloud storage for processing and retains them until the user deletes them
 3. **Rate Limiting**: Per-user rate limits on inference endpoint
 4. **Credit Validation**: Balance checked before every inference call
 5. **Row-Level Security**: Supabase RLS policies ensure users only access their own data
