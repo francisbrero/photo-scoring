@@ -24,6 +24,10 @@ An Architecture Decision Record captures an important architectural decision mad
 | [007](007-supabase-authentication.md) | Supabase Authentication | Accepted | JWT auth with Row-Level Security |
 | [008](008-yaml-configuration.md) | YAML Configuration | Accepted | YAML files with Pydantic validation |
 | [009](009-grid-triage.md) | Grid-Based Visual Triage | Accepted | Two-pass grid triage for large collections (96% cost reduction) |
+| [010](010-supabase-claude-code-integration.md) | Supabase Claude Code Integration | Accepted | Supabase integration for Claude Code workflows |
+| [011](011-triage-memory-optimization.md) | Triage Memory Optimization | Accepted | Memory optimization for large triage operations |
+| [012](012-product-modes.md) | Explicit Product Modes | Proposed | Three named modes with explicit data-flow documentation |
+| [013](013-background-job-processing.md) | Background Job Processing | Accepted | Database-backed queue with webhook triggers for long-running jobs |
 
 ## Creating a New ADR
 

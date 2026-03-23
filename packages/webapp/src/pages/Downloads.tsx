@@ -241,7 +241,7 @@ export function Downloads() {
             {
               icon: '🔒',
               title: 'Privacy First',
-              description: 'All scoring happens locally. Your photos never leave your computer.',
+              description: 'Your photos are never stored in the cloud. Image data may be sent to AI providers for analysis depending on your configuration.',
             },
             {
               icon: '⚡',
