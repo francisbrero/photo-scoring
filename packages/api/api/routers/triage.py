@@ -555,6 +555,102 @@ async def internal_process_triage(
     )
 
 
+class InternalCleanupResponse(BaseModel):
+    """Response from internal cleanup of expired triage jobs."""
+
+    jobs_cleaned: int
+    jobs_skipped: int
+    files_deleted: int
+
+
+@router.post("/internal/cleanup", response_model=InternalCleanupResponse)
+async def internal_cleanup_expired(
+    supabase: SupabaseClient,
+    x_internal_key: str | None = Query(None, alias="x-internal-key"),
+):
+    """Clean up expired triage jobs: delete storage files then DB records.
+
+    This endpoint replaces the old SQL-only cleanup_expired_triage_jobs() which
+    could not delete Supabase Storage files, leaving orphaned files.
+
+    Order of operations per job:
+    1. Query expired jobs with storage paths via get_expired_triage_jobs()
+    2. Delete storage files (treat 404 as success)
+    3. Only delete DB row after all storage files are cleaned
+    4. Skip jobs where storage deletion fails (retried on next run)
+    """
+    import logging
+    from collections import defaultdict
+
+    logger = logging.getLogger(__name__)
+
+    # Validate internal API key
+    settings = get_settings()
+    expected_key = settings.get_internal_api_key
+
+    if x_internal_key != expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+
+    # Get expired jobs with storage paths
+    result = supabase.rpc("get_expired_triage_jobs").execute()
+
+    if not result.data:
+        return InternalCleanupResponse(jobs_cleaned=0, jobs_skipped=0, files_deleted=0)
+
+    # Group storage paths by job_id
+    jobs: dict[str, list[str]] = defaultdict(list)
+    for row in result.data:
+        job_id = row["job_id"]
+        if row["storage_path"]:
+            jobs[job_id].append(row["storage_path"])
+        elif job_id not in jobs:
+            jobs[job_id] = []
+
+    jobs_cleaned = 0
+    jobs_skipped = 0
+    files_deleted = 0
+
+    for job_id, paths in jobs.items():
+        # Delete storage files for this job
+        storage_ok = True
+        job_files_deleted = 0
+
+        if paths:
+            try:
+                supabase.storage.from_("photos").remove(paths)
+                job_files_deleted = len(paths)
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Treat "not found" / 404 as success (file already gone)
+                if "not found" in error_msg or "404" in error_msg:
+                    job_files_deleted = len(paths)
+                else:
+                    logger.warning("Storage cleanup failed for job %s: %s", job_id, e)
+                    storage_ok = False
+
+        if not storage_ok:
+            jobs_skipped += 1
+            continue
+
+        # All storage files cleaned (or none existed) — safe to delete DB row
+        try:
+            supabase.table("triage_jobs").delete().eq("id", job_id).execute()
+            jobs_cleaned += 1
+            files_deleted += job_files_deleted
+        except Exception as e:
+            logger.warning("DB cleanup failed for job %s: %s", job_id, e)
+            jobs_skipped += 1
+
+    return InternalCleanupResponse(
+        jobs_cleaned=jobs_cleaned,
+        jobs_skipped=jobs_skipped,
+        files_deleted=files_deleted,
+    )
+
+
 @router.get("/{job_id}/status", response_model=TriageStatusResponse)
 async def get_triage_status(
     job_id: str,
