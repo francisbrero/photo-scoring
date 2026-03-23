@@ -124,6 +124,8 @@ export default function Triage() {
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) addFiles(e.target.files);
+      // Reset so re-selecting the same file triggers change again
+      e.target.value = '';
     },
     [addFiles]
   );
