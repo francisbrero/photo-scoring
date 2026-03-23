@@ -25,6 +25,8 @@ interface UseTriageReturn {
   job: TriageJob | null;
   status: TriageStatus | null;
   results: TriageResults | null;
+  isDownloading: boolean;
+  downloadError: string | null;
   error: string | null;
 
   // Actions
@@ -34,7 +36,7 @@ interface UseTriageReturn {
   pollStatus: (jobId: string) => Promise<TriageStatus | null>;
   getResults: (jobId: string) => Promise<TriageResults | null>;
   proceedToScoring: (jobId: string, photoIds?: string[]) => Promise<ProceedResponse | null>;
-  downloadSelected: (jobId: string) => void;
+  downloadSelected: (jobId: string) => Promise<void>;
   cancelTriage: (jobId: string) => Promise<void>;
   reset: () => void;
 }
@@ -50,6 +52,8 @@ export function useTriage(): UseTriageReturn {
   const [job, setJob] = useState<TriageJob | null>(null);
   const [status, setStatus] = useState<TriageStatus | null>(null);
   const [results, setResults] = useState<TriageResults | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasCheckedActiveJobs = useRef(false);
@@ -256,7 +260,14 @@ export function useTriage(): UseTriageReturn {
           setError(statusData.error_message || 'Triage failed');
           setActiveJobs((prev) => prev.filter((j) => j.job_id !== jobId));
         } else {
-          // Job still processing - resume polling
+          // Job still processing - restore job reference and resume polling
+          setJob({
+            job_id: jobId,
+            status: statusData.status,
+            photo_count: statusData.total_input,
+            credits_deducted: 0,
+            estimated_grids: 0,
+          });
           setIsProcessing(true);
           startPolling(jobId);
         }
@@ -348,12 +359,42 @@ export function useTriage(): UseTriageReturn {
   );
 
   const downloadSelected = useCallback(
-    (jobId: string) => {
+    async (jobId: string) => {
       if (!session?.access_token) return;
 
-      // Open download in new window/tab
-      const url = `/api/triage/${jobId}/download`;
-      window.open(url, '_blank');
+      setIsDownloading(true);
+      setDownloadError(null);
+
+      try {
+        const response = await apiFetch(`/api/triage/${jobId}/download`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to download');
+        }
+
+        const blob = await response.blob();
+
+        // Extract filename from Content-Disposition header
+        const disposition = response.headers.get('Content-Disposition');
+        const filenameMatch = disposition?.match(/filename=(.+)/);
+        const filename = filenameMatch?.[1] || `triage_${jobId.slice(0, 8)}_selected.zip`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        setDownloadError(err instanceof Error ? err.message : 'Download failed');
+      } finally {
+        setIsDownloading(false);
+      }
     },
     [session?.access_token]
   );
@@ -400,6 +441,7 @@ export function useTriage(): UseTriageReturn {
     setJob(null);
     setStatus(null);
     setResults(null);
+    setDownloadError(null);
     setError(null);
   }, []);
 
@@ -408,6 +450,8 @@ export function useTriage(): UseTriageReturn {
     isUploading,
     uploadProgress,
     isProcessing,
+    isDownloading,
+    downloadError,
     isLoadingActiveJobs,
     activeJobs,
     job,
