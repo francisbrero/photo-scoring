@@ -23,6 +23,13 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.8.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.8.0",
+]
 sidecar = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
