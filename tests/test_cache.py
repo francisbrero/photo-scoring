@@ -1,12 +1,14 @@
 """Tests for SQLite cache layer."""
 
+import sqlite3
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from photo_score.storage.cache import Cache
-from photo_score.storage.models import NormalizedAttributes
+from photo_score.storage.models import ImageMetadata, NormalizedAttributes
 
 
 @pytest.fixture
@@ -129,3 +131,234 @@ class TestCache:
 
         retrieved = temp_cache.get_attributes("update_test")
         assert retrieved.composition == 0.9
+
+
+class TestSyncFeatures:
+    """Tests for sync-related cache features."""
+
+    def test_scored_at_roundtrips(self, temp_cache: Cache):
+        """scored_at should round-trip through store/get."""
+        now = datetime.now(timezone.utc)
+        attrs = NormalizedAttributes(
+            image_id="scored1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+            scored_at=now,
+        )
+        temp_cache.store_attributes(attrs)
+        retrieved = temp_cache.get_attributes("scored1")
+        assert retrieved is not None
+        assert retrieved.scored_at is not None
+        assert retrieved.scored_at.isoformat() == now.isoformat()
+
+    def test_scored_at_none_roundtrips(self, temp_cache: Cache):
+        """scored_at=None should round-trip as None."""
+        attrs = NormalizedAttributes(
+            image_id="scored_none",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+            scored_at=None,
+        )
+        temp_cache.store_attributes(attrs)
+        retrieved = temp_cache.get_attributes("scored_none")
+        assert retrieved is not None
+        assert retrieved.scored_at is None
+
+    def test_synced_at_none_on_fresh_store(self, temp_cache: Cache):
+        """synced_at should be None after initial store."""
+        attrs = NormalizedAttributes(
+            image_id="fresh1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+        )
+        temp_cache.store_attributes(attrs)
+
+        # Check directly in DB that synced_at is NULL
+        with sqlite3.connect(temp_cache.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT synced_at FROM normalized_attributes WHERE image_id = ?",
+                ("fresh1",),
+            ).fetchone()
+            assert row["synced_at"] is None
+
+    def test_mark_synced_sets_synced_at(self, temp_cache: Cache):
+        """mark_synced should set synced_at for given ids."""
+        attrs = NormalizedAttributes(
+            image_id="sync1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+        )
+        temp_cache.store_attributes(attrs)
+        temp_cache.mark_synced(["sync1"])
+
+        with sqlite3.connect(temp_cache.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT synced_at FROM normalized_attributes WHERE image_id = ?",
+                ("sync1",),
+            ).fetchone()
+            assert row["synced_at"] is not None
+
+    def test_list_unsynced_returns_new_rows(self, temp_cache: Cache):
+        """list_unsynced_attributes should return rows with synced_at IS NULL."""
+        attrs = NormalizedAttributes(
+            image_id="unsynced1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+        )
+        temp_cache.store_attributes(attrs)
+
+        unsynced = temp_cache.list_unsynced_attributes()
+        ids = [a.image_id for a in unsynced]
+        assert "unsynced1" in ids
+
+    def test_mark_synced_makes_rows_no_longer_unsynced(self, temp_cache: Cache):
+        """After mark_synced, rows should not appear in list_unsynced."""
+        now = datetime.now(timezone.utc)
+        attrs = NormalizedAttributes(
+            image_id="will_sync",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+            scored_at=now,
+        )
+        temp_cache.store_attributes(attrs)
+        temp_cache.mark_synced(["will_sync"])
+
+        unsynced = temp_cache.list_unsynced_attributes()
+        ids = [a.image_id for a in unsynced]
+        assert "will_sync" not in ids
+
+    def test_list_unsynced_returns_changed_rows(self, temp_cache: Cache):
+        """Rows with scored_at > synced_at should appear as unsynced."""
+        from datetime import timedelta
+
+        old_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        attrs = NormalizedAttributes(
+            image_id="changed1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+            scored_at=old_time,
+        )
+        temp_cache.store_attributes(attrs)
+        temp_cache.mark_synced(["changed1"])
+
+        # Now re-score with newer scored_at
+        new_time = datetime.now(timezone.utc)
+        attrs.scored_at = new_time
+        temp_cache.store_attributes(attrs)
+
+        unsynced = temp_cache.list_unsynced_attributes()
+        ids = [a.image_id for a in unsynced]
+        assert "changed1" in ids
+
+    def test_store_preserves_synced_at(self, temp_cache: Cache):
+        """store_attributes should not null out synced_at on update."""
+        attrs = NormalizedAttributes(
+            image_id="preserve1",
+            composition=0.5,
+            subject_strength=0.5,
+            visual_appeal=0.5,
+            sharpness=0.5,
+            exposure_balance=0.5,
+            noise_level=0.5,
+        )
+        temp_cache.store_attributes(attrs)
+        temp_cache.mark_synced(["preserve1"])
+
+        # Update attributes (new store)
+        attrs.composition = 0.9
+        temp_cache.store_attributes(attrs)
+
+        # synced_at should still be set (not nulled by store)
+        with sqlite3.connect(temp_cache.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT synced_at FROM normalized_attributes WHERE image_id = ?",
+                ("preserve1",),
+            ).fetchone()
+            assert row["synced_at"] is not None
+
+    def test_list_all_metadata_for(self, temp_cache: Cache):
+        """list_all_metadata_for should return correct dict for given ids."""
+        meta1 = ImageMetadata(description="Photo 1", location_name="Paris")
+        meta2 = ImageMetadata(description="Photo 2", location_country="Japan")
+
+        temp_cache.store_metadata("img1", meta1)
+        temp_cache.store_metadata("img2", meta2)
+        temp_cache.store_metadata("img3", ImageMetadata(description="Not requested"))
+
+        result = temp_cache.list_all_metadata_for(["img1", "img2"])
+        assert len(result) == 2
+        assert result["img1"].description == "Photo 1"
+        assert result["img1"].location_name == "Paris"
+        assert result["img2"].description == "Photo 2"
+        assert result["img2"].location_country == "Japan"
+
+    def test_list_all_metadata_for_empty(self, temp_cache: Cache):
+        """list_all_metadata_for with empty list should return empty dict."""
+        result = temp_cache.list_all_metadata_for([])
+        assert result == {}
+
+    def test_mark_synced_empty_list(self, temp_cache: Cache):
+        """mark_synced with empty list should be a no-op."""
+        temp_cache.mark_synced([])  # Should not raise
+
+    def test_migration_adds_columns_to_existing_db(self):
+        """Migration should add scored_at and synced_at to existing DBs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "migrate_test.db"
+            # Create DB with old schema (no scored_at/synced_at)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE normalized_attributes (
+                        image_id TEXT PRIMARY KEY,
+                        composition REAL NOT NULL,
+                        subject_strength REAL NOT NULL,
+                        visual_appeal REAL NOT NULL,
+                        sharpness REAL NOT NULL,
+                        exposure_balance REAL NOT NULL,
+                        noise_level REAL NOT NULL,
+                        model_name TEXT,
+                        model_version TEXT
+                    )
+                """)
+                conn.commit()
+
+            # Opening Cache should trigger migration
+            cache = Cache(db_path)
+
+            # Verify columns exist
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.execute("PRAGMA table_info(normalized_attributes)")
+                columns = {row[1] for row in cursor.fetchall()}
+                assert "scored_at" in columns
+                assert "synced_at" in columns

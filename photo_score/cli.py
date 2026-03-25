@@ -1,6 +1,7 @@
 """CLI for photo scoring."""
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -162,7 +163,8 @@ def run(
                                 image.file_path,
                                 config.model.version,
                             )
-                            # Cache result
+                            # Stamp scored_at and cache result
+                            attrs.scored_at = datetime.now(timezone.utc)
                             cache.store_attributes(attrs)
                         except OpenRouterError as e:
                             logger.warning(f"Failed to analyze {image.filename}: {e}")
