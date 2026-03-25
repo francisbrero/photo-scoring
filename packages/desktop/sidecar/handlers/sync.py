@@ -1,11 +1,27 @@
 """Cloud sync handlers."""
 
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from photo_score.storage.cache import Cache
+from photo_score.storage.models import ImageMetadata, NormalizedAttributes
+
+from . import cloud_client
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+PUSH_BATCH_SIZE = 500
+
+# Settings file for persisting sync cursor
+SETTINGS_DIR = Path.home() / ".photo_score"
+SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
 
 class SyncRequest(BaseModel):
@@ -39,13 +55,34 @@ _sync_state = {
 }
 
 
+def _load_settings() -> dict:
+    """Load settings from file."""
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_settings(settings: dict) -> None:
+    """Save settings to file."""
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
+
+
 @router.get("/status", response_model=SyncStatusResponse)
 async def get_sync_status():
     """Get current sync status."""
+    cache = Cache()
+    unsynced = cache.list_unsynced_attributes()
     return SyncStatusResponse(
         is_syncing=_sync_state["is_syncing"],
         last_sync=_sync_state["last_sync"],
-        pending_count=_sync_state["pending_count"],
+        pending_count=len(unsynced),
     )
 
 
@@ -59,29 +96,194 @@ async def start_sync(request: SyncRequest):
 
     _sync_state["is_syncing"] = True
 
+    total_synced = 0
+    errors: list[str] = []
+
     try:
-        # TODO: Implement actual cloud sync
-        # This would:
-        # 1. Get all cached attributes from local SQLite
-        # 2. POST them to cloud /sync/attributes endpoint
-        # 3. Track progress and errors
+        cache = Cache()
+        settings = _load_settings()
 
-        # For now, return a placeholder response
-        from datetime import datetime
+        # Load pull cursor from settings
+        cursor_since = settings.get("sync_cursor_since")
+        cursor_after_id = settings.get("sync_cursor_after_id")
 
-        _sync_state["last_sync"] = datetime.now().isoformat()
-        _sync_state["pending_count"] = 0
+        # --- PUSH PHASE ---
+        unsynced = cache.list_unsynced_attributes()
+        if unsynced:
+            image_ids = [a.image_id for a in unsynced]
+            metadata_map = cache.list_all_metadata_for(image_ids)
+
+            # Batch into groups of PUSH_BATCH_SIZE
+            for i in range(0, len(unsynced), PUSH_BATCH_SIZE):
+                batch = unsynced[i : i + PUSH_BATCH_SIZE]
+                records = []
+                for attr in batch:
+                    md = metadata_map.get(attr.image_id)
+                    record: dict = {
+                        "image_id": attr.image_id,
+                        "attributes": {
+                            "image_id": attr.image_id,
+                            "composition": attr.composition,
+                            "subject_strength": attr.subject_strength,
+                            "visual_appeal": attr.visual_appeal,
+                            "sharpness": attr.sharpness,
+                            "exposure_balance": attr.exposure_balance,
+                            "noise_level": attr.noise_level,
+                            "model_name": attr.model_name,
+                            "model_version": attr.model_version,
+                        },
+                        "scored_at": attr.scored_at.isoformat()
+                        if attr.scored_at
+                        else None,
+                    }
+                    if md:
+                        record["metadata"] = md.model_dump(
+                            mode="json", exclude_none=True
+                        )
+                    records.append(record)
+
+                try:
+                    result = await cloud_client.push_attributes(records)
+
+                    # Mark successfully synced
+                    synced_count = result.get("synced", 0)
+                    total_synced += synced_count
+
+                    # Mark synced ids (those not in conflicts)
+                    conflict_ids = {c["image_id"] for c in result.get("conflicts", [])}
+                    synced_ids = [
+                        r["image_id"]
+                        for r in records
+                        if r["image_id"] not in conflict_ids
+                    ]
+                    if synced_ids:
+                        cache.mark_synced(synced_ids)
+
+                    # Handle conflicts: overwrite local with cloud version
+                    for conflict in result.get("conflicts", []):
+                        cid = conflict["image_id"]
+                        cloud_rec = conflict.get("cloud_record", {})
+                        cloud_attrs = cloud_rec.get("attributes", {})
+                        if cloud_attrs:
+                            scored_at = None
+                            if cloud_rec.get("scored_at"):
+                                try:
+                                    scored_at = datetime.fromisoformat(
+                                        cloud_rec["scored_at"]
+                                    )
+                                except (ValueError, TypeError):
+                                    pass
+                            attrs = NormalizedAttributes(
+                                image_id=cid,
+                                composition=cloud_attrs.get("composition", 0),
+                                subject_strength=cloud_attrs.get("subject_strength", 0),
+                                visual_appeal=cloud_attrs.get("visual_appeal", 0),
+                                sharpness=cloud_attrs.get("sharpness", 0),
+                                exposure_balance=cloud_attrs.get("exposure_balance", 0),
+                                noise_level=cloud_attrs.get("noise_level", 0),
+                                model_name=cloud_attrs.get("model_name"),
+                                model_version=cloud_attrs.get("model_version"),
+                                scored_at=scored_at,
+                            )
+                            cache.store_attributes(attrs)
+
+                        cloud_meta = cloud_rec.get("metadata")
+                        if cloud_meta:
+                            cache.store_metadata(cid, ImageMetadata(**cloud_meta))
+
+                        cache.mark_synced([cid])
+
+                except Exception as e:
+                    logger.error(f"Push batch failed: {e}")
+                    errors.append(f"Push error: {str(e)}")
+
+        # --- PULL PHASE ---
+        while True:
+            try:
+                result = await cloud_client.pull_attributes(
+                    since=cursor_since, after_id=cursor_after_id
+                )
+            except Exception as e:
+                logger.error(f"Pull failed: {e}")
+                errors.append(f"Pull error: {str(e)}")
+                break
+
+            records = result.get("attributes", [])
+            if not records:
+                break
+
+            for record in records:
+                rid = record["image_id"]
+                rattrs = record.get("attributes", {})
+                cloud_scored_at = None
+                if record.get("scored_at"):
+                    try:
+                        cloud_scored_at = datetime.fromisoformat(record["scored_at"])
+                    except (ValueError, TypeError):
+                        pass
+
+                # Only overwrite local if cloud is newer (or no local)
+                local = cache.get_attributes(rid)
+                if local is not None and local.scored_at is not None:
+                    if cloud_scored_at is None or cloud_scored_at <= local.scored_at:
+                        # Local is newer or equal — keep local.
+                        # Do NOT mark_synced: if the row is still
+                        # pending upload (push failed), it must remain
+                        # unsynced so the next push retries it.
+                        # Already-synced rows won't re-upload anyway
+                        # (scored_at <= synced_at).
+                        continue
+
+                attrs = NormalizedAttributes(
+                    image_id=rid,
+                    composition=rattrs.get("composition", 0),
+                    subject_strength=rattrs.get("subject_strength", 0),
+                    visual_appeal=rattrs.get("visual_appeal", 0),
+                    sharpness=rattrs.get("sharpness", 0),
+                    exposure_balance=rattrs.get("exposure_balance", 0),
+                    noise_level=rattrs.get("noise_level", 0),
+                    model_name=rattrs.get("model_name"),
+                    model_version=rattrs.get("model_version"),
+                    scored_at=cloud_scored_at,
+                )
+                cache.store_attributes(attrs)
+                cache.mark_synced([rid])
+
+                rmeta = record.get("metadata")
+                if rmeta:
+                    cache.store_metadata(rid, ImageMetadata(**rmeta))
+
+            # Advance cursor from response (always present when
+            # records are returned)
+            next_cursor = result.get("next_cursor")
+            if next_cursor:
+                cursor_since = next_cursor["since"]
+                cursor_after_id = next_cursor["after_id"]
+
+            # Stop when we got a partial page (fewer than default limit)
+            # — that means we've consumed everything
+            if len(records) < 500:
+                break
+
+        # Persist cursor to settings
+        settings["sync_cursor_since"] = cursor_since
+        settings["sync_cursor_after_id"] = cursor_after_id
+        _save_settings(settings)
+
+        _sync_state["last_sync"] = datetime.now(timezone.utc).isoformat()
+        _sync_state["pending_count"] = len(cache.list_unsynced_attributes())
 
         return SyncResponse(
-            status="completed",
-            synced=0,
-            errors=[],
+            status="completed" if not errors else "partial",
+            synced=total_synced,
+            errors=errors,
         )
     except Exception as e:
+        logger.exception("Sync failed")
         return SyncResponse(
             status="failed",
-            synced=0,
-            errors=[str(e)],
+            synced=total_synced,
+            errors=[*errors, str(e)],
         )
     finally:
         _sync_state["is_syncing"] = False
@@ -95,7 +297,5 @@ async def stop_sync():
     if not _sync_state["is_syncing"]:
         return {"status": "not_syncing"}
 
-    # TODO: Implement cancellation of sync
     _sync_state["is_syncing"] = False
-
     return {"status": "stopped"}

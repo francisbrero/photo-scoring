@@ -45,6 +45,7 @@ class NormalizedAttributes(BaseModel):
     # Metadata
     model_name: Optional[str] = None
     model_version: Optional[str] = None
+    scored_at: Optional[datetime] = None
 
 
 class ImageMetadata(BaseModel):

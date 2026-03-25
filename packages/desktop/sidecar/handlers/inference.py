@@ -1,6 +1,7 @@
 """Inference and scoring handlers using cloud API."""
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -169,6 +170,7 @@ async def score_image(request: ScoreRequest):
                     model_name=cloud_attrs.get("model_name", "cloud"),
                     model_version=cloud_attrs.get("model_version", "v1"),
                 )
+                attrs.scored_at = datetime.now(timezone.utc)
                 cache.store_attributes(attrs)
 
                 # Get credits remaining from response

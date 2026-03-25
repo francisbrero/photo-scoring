@@ -42,6 +42,10 @@ ENV/
 *.swp
 *.swo
 
+# Claude Code
+.claude/worktrees/
+TODO.md
+
 # Cache
 .cache/
 *.cache

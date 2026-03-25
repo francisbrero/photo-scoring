@@ -126,6 +126,149 @@ async def analyze_image(image_path: str, image_hash: str) -> dict:
     return await score_image(image_path, image_hash)
 
 
+async def push_attributes(attributes: list[dict]) -> dict:
+    """Push attribute records to cloud sync endpoint.
+
+    Args:
+        attributes: List of dicts with image_id, attributes, metadata?, scored_at?
+
+    Returns:
+        Response dict with synced count and conflicts.
+    """
+    token = get_auth_token()
+    if not token:
+        raise AuthenticationError()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{CLOUD_API_URL}/api/sync/attributes",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"attributes": attributes},
+                timeout=120.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                raise AuthenticationError("Session expired. Please log in again.")
+            elif response.status_code == 422:
+                detail = response.json().get("detail", "Validation error")
+                raise CloudInferenceError(str(detail), status_code=422)
+            else:
+                detail = response.json().get("detail", "Push failed")
+                raise CloudInferenceError(str(detail), status_code=response.status_code)
+
+    except httpx.TimeoutException:
+        raise CloudInferenceError(
+            "Push request timed out.",
+            status_code=504,
+            retryable=True,
+        )
+    except httpx.RequestError as e:
+        raise CloudInferenceError(
+            f"Cannot connect to Photo Scorer service: {str(e)}",
+            status_code=503,
+            retryable=True,
+        )
+
+
+async def pull_attributes(
+    since: str | None = None, after_id: str | None = None
+) -> dict:
+    """Pull attribute records from cloud sync endpoint.
+
+    Args:
+        since: Cursor timestamp for incremental pull.
+        after_id: Cursor record ID for pagination.
+
+    Returns:
+        Response dict with attributes list and next_cursor.
+    """
+    token = get_auth_token()
+    if not token:
+        raise AuthenticationError()
+
+    params: dict[str, str] = {}
+    if since:
+        params["since"] = since
+    if after_id:
+        params["after_id"] = after_id
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{CLOUD_API_URL}/api/sync/attributes",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+                timeout=60.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                raise AuthenticationError("Session expired. Please log in again.")
+            else:
+                detail = response.json().get("detail", "Pull failed")
+                raise CloudInferenceError(str(detail), status_code=response.status_code)
+
+    except httpx.TimeoutException:
+        raise CloudInferenceError(
+            "Pull request timed out.",
+            status_code=504,
+            retryable=True,
+        )
+    except httpx.RequestError as e:
+        raise CloudInferenceError(
+            f"Cannot connect to Photo Scorer service: {str(e)}",
+            status_code=503,
+            retryable=True,
+        )
+
+
+async def get_sync_status() -> dict:
+    """Get sync status from cloud.
+
+    Returns:
+        Response dict with last_sync and cloud_count.
+    """
+    token = get_auth_token()
+    if not token:
+        raise AuthenticationError()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{CLOUD_API_URL}/api/sync/status",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                raise AuthenticationError("Session expired. Please log in again.")
+            else:
+                detail = response.json().get("detail", "Status check failed")
+                raise CloudInferenceError(str(detail), status_code=response.status_code)
+
+    except httpx.TimeoutException:
+        raise CloudInferenceError(
+            "Status request timed out.",
+            status_code=504,
+            retryable=True,
+        )
+    except httpx.RequestError as e:
+        raise CloudInferenceError(
+            f"Cannot connect to Photo Scorer service: {str(e)}",
+            status_code=503,
+            retryable=True,
+        )
+
+
 async def extract_metadata(image_path: str, image_hash: str) -> dict:
     """Extract metadata from an image using the cloud API.
 

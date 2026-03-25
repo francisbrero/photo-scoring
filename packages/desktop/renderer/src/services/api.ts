@@ -119,9 +119,20 @@ class CloudApiClient {
       image_id: string;
       attributes: Record<string, number>;
       metadata?: Record<string, unknown>;
-      scored_at: string;
+      scored_at: string | null;
     }>
-  ): Promise<{ synced: number }> {
+  ): Promise<{
+    synced: number;
+    conflicts: Array<{
+      image_id: string;
+      reason: string;
+      cloud_record: {
+        attributes: Record<string, number>;
+        metadata?: Record<string, unknown>;
+        scored_at: string | null;
+      };
+    }>;
+  }> {
     return this.fetch('/sync/attributes', {
       method: 'POST',
       body: JSON.stringify({ attributes }),
@@ -129,18 +140,22 @@ class CloudApiClient {
   }
 
   /**
-   * Get synced attributes from cloud
+   * Get synced attributes from cloud with cursor-based pagination
    */
-  async getAttributes(since?: string): Promise<{
+  async getAttributes(since?: string, afterId?: string): Promise<{
     attributes: Array<{
       image_id: string;
       attributes: Record<string, number>;
       metadata?: Record<string, unknown>;
-      scored_at: string;
+      scored_at: string | null;
     }>;
+    next_cursor: { since: string; after_id: string } | null;
   }> {
-    const params = since ? `?since=${encodeURIComponent(since)}` : '';
-    return this.fetch(`/sync/attributes${params}`);
+    const params = new URLSearchParams();
+    if (since) params.set('since', since);
+    if (afterId) params.set('after_id', afterId);
+    const qs = params.toString();
+    return this.fetch(`/sync/attributes${qs ? `?${qs}` : ''}`);
   }
 }
 

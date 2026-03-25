@@ -56,15 +56,21 @@ class TestSchemaCompatibility:
                     columns.add(match.group(1).lower())
 
         # Also scan all migration files for ALTER TABLE ADD COLUMN on this table
-        migrations_dir = Path(__file__).parent.parent / "migrations"
-        for migration_file in sorted(migrations_dir.glob("*.sql")):
-            sql = migration_file.read_text()
-            for alter_match in re.finditer(
-                rf"ALTER TABLE\s+{table_name}\s+ADD\s+COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)",
-                sql,
-                re.IGNORECASE,
-            ):
-                columns.add(alter_match.group(1).lower())
+        migration_dirs = [
+            Path(__file__).parent.parent / "migrations",
+            Path(__file__).parent.parent.parent.parent / "supabase" / "migrations",
+        ]
+        for mdir in migration_dirs:
+            if not mdir.exists():
+                continue
+            for migration_file in sorted(mdir.glob("*.sql")):
+                sql = migration_file.read_text()
+                for alter_match in re.finditer(
+                    rf"ALTER TABLE\s+{table_name}\s+ADD\s+COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)",
+                    sql,
+                    re.IGNORECASE,
+                ):
+                    columns.add(alter_match.group(1).lower())
 
         return columns
 
@@ -159,8 +165,8 @@ class TestSchemaCompatibility:
             f"Expected columns {expected} not all in migration: {migration_columns}"
         )
 
-    def test_no_scored_at_column_used(self):
-        """Verify we don't use scored_at (which doesn't exist)."""
+    def test_no_scored_at_column_in_photos_router(self):
+        """Verify photos.py doesn't use scored_at (it uses updated_at)."""
         router_path = Path(__file__).parent.parent / "api" / "routers" / "photos.py"
         source = router_path.read_text()
 
@@ -172,8 +178,8 @@ class TestSchemaCompatibility:
         """Verify inference_cache table columns match what code uses."""
         migration_columns = self.get_migration_columns("inference_cache")
 
-        # Columns the code uses
-        expected = {"user_id", "image_hash", "attributes"}
+        # Columns the code uses (including sync columns from migration)
+        expected = {"user_id", "image_hash", "attributes", "updated_at", "scored_at"}
 
         assert expected.issubset(migration_columns), (
             f"Expected columns {expected} not all in migration: {migration_columns}"
@@ -198,6 +204,17 @@ class TestMigrationSyntax:
             path = migrations_dir / migration
             assert path.exists(), f"Migration file not found: {migration}"
 
+        # Also check supabase/migrations for canonical migration files
+        repo_root = Path(__file__).parent.parent.parent.parent
+        supabase_dir = repo_root / "supabase" / "migrations"
+        expected_supabase = [
+            "20250101000000_initial_schema.sql",
+            "20260324000000_sync_columns.sql",
+        ]
+        for migration in expected_supabase:
+            path = supabase_dir / migration
+            assert path.exists(), f"Supabase migration file not found: {migration}"
+
     def test_migrations_have_valid_ddl(self):
         """Verify each migration contains valid DDL (CREATE TABLE or ALTER TABLE)."""
         migrations_dir = Path(__file__).parent.parent / "migrations"
@@ -210,4 +227,18 @@ class TestMigrationSyntax:
             assert has_create or has_alter or has_create_function, (
                 f"Migration {migration_file.name} doesn't contain "
                 f"CREATE TABLE, ALTER TABLE, or CREATE FUNCTION"
+            )
+
+        # Also validate supabase/migrations
+        repo_root = Path(__file__).parent.parent.parent.parent
+        supabase_dir = repo_root / "supabase" / "migrations"
+        for migration_file in supabase_dir.glob("*.sql"):
+            content = migration_file.read_text().upper()
+            has_create = "CREATE TABLE" in content
+            has_alter = "ALTER TABLE" in content
+            has_create_function = "CREATE OR REPLACE FUNCTION" in content
+            has_create_policy = "CREATE POLICY" in content
+            assert has_create or has_alter or has_create_function or has_create_policy, (
+                f"Supabase migration {migration_file.name} doesn't contain "
+                f"CREATE TABLE, ALTER TABLE, CREATE FUNCTION, or CREATE POLICY"
             )

@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -31,6 +31,7 @@ class Cache:
         self.db_path = db_path
         self._ensure_dir()
         self._init_schema()
+        self._migrate_schema()
 
     def _ensure_dir(self) -> None:
         """Ensure cache directory exists."""
@@ -59,7 +60,9 @@ class Cache:
                     exposure_balance REAL NOT NULL,
                     noise_level REAL NOT NULL,
                     model_name TEXT,
-                    model_version TEXT
+                    model_version TEXT,
+                    scored_at TEXT,
+                    synced_at TEXT
                 )
             """)
             conn.execute("""
@@ -82,6 +85,23 @@ class Cache:
                     created_at TEXT NOT NULL
                 )
             """)
+            conn.commit()
+
+    def _migrate_schema(self) -> None:
+        """Add new columns to existing databases."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Get existing columns
+            cursor = conn.execute("PRAGMA table_info(normalized_attributes)")
+            existing = {row[1] for row in cursor.fetchall()}
+
+            if "scored_at" not in existing:
+                conn.execute(
+                    "ALTER TABLE normalized_attributes ADD COLUMN scored_at TEXT"
+                )
+            if "synced_at" not in existing:
+                conn.execute(
+                    "ALTER TABLE normalized_attributes ADD COLUMN synced_at TEXT"
+                )
             conn.commit()
 
     def get_inference(
@@ -146,6 +166,10 @@ class Cache:
             if row is None:
                 return None
 
+            scored_at = None
+            if row["scored_at"]:
+                scored_at = datetime.fromisoformat(row["scored_at"])
+
             return NormalizedAttributes(
                 image_id=row["image_id"],
                 composition=row["composition"],
@@ -156,17 +180,36 @@ class Cache:
                 noise_level=row["noise_level"],
                 model_name=row["model_name"],
                 model_version=row["model_version"],
+                scored_at=scored_at,
             )
 
     def store_attributes(self, attributes: NormalizedAttributes) -> None:
-        """Store normalized attributes in cache."""
+        """Store normalized attributes in cache.
+
+        Uses INSERT ... ON CONFLICT to preserve synced_at on updates.
+        """
+        scored_at_str = None
+        if attributes.scored_at is not None:
+            scored_at_str = attributes.scored_at.isoformat()
+
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO normalized_attributes
+                INSERT INTO normalized_attributes
                 (image_id, composition, subject_strength, visual_appeal,
-                 sharpness, exposure_balance, noise_level, model_name, model_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sharpness, exposure_balance, noise_level, model_name, model_version,
+                 scored_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(image_id) DO UPDATE SET
+                    composition = excluded.composition,
+                    subject_strength = excluded.subject_strength,
+                    visual_appeal = excluded.visual_appeal,
+                    sharpness = excluded.sharpness,
+                    exposure_balance = excluded.exposure_balance,
+                    noise_level = excluded.noise_level,
+                    model_name = excluded.model_name,
+                    model_version = excluded.model_version,
+                    scored_at = excluded.scored_at
                 """,
                 (
                     attributes.image_id,
@@ -178,9 +221,80 @@ class Cache:
                     attributes.noise_level,
                     attributes.model_name,
                     attributes.model_version,
+                    scored_at_str,
                 ),
             )
             conn.commit()
+
+    def mark_synced(self, image_ids: list[str]) -> None:
+        """Mark attributes as synced by setting synced_at to now (UTC)."""
+        if not image_ids:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            placeholders = ",".join("?" for _ in image_ids)
+            conn.execute(
+                f"UPDATE normalized_attributes SET synced_at = ? WHERE image_id IN ({placeholders})",
+                [now, *image_ids],
+            )
+            conn.commit()
+
+    def list_unsynced_attributes(self) -> list[NormalizedAttributes]:
+        """Return attributes that have never been synced or changed since last sync."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT * FROM normalized_attributes
+                WHERE synced_at IS NULL OR scored_at > synced_at
+                """
+            )
+            results = []
+            for row in cursor.fetchall():
+                scored_at = None
+                if row["scored_at"]:
+                    scored_at = datetime.fromisoformat(row["scored_at"])
+                results.append(
+                    NormalizedAttributes(
+                        image_id=row["image_id"],
+                        composition=row["composition"],
+                        subject_strength=row["subject_strength"],
+                        visual_appeal=row["visual_appeal"],
+                        sharpness=row["sharpness"],
+                        exposure_balance=row["exposure_balance"],
+                        noise_level=row["noise_level"],
+                        model_name=row["model_name"],
+                        model_version=row["model_version"],
+                        scored_at=scored_at,
+                    )
+                )
+            return results
+
+    def list_all_metadata_for(self, image_ids: list[str]) -> dict[str, ImageMetadata]:
+        """Batch lookup metadata by image_id list."""
+        if not image_ids:
+            return {}
+        result: dict[str, ImageMetadata] = {}
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            placeholders = ",".join("?" for _ in image_ids)
+            cursor = conn.execute(
+                f"SELECT * FROM image_metadata WHERE image_id IN ({placeholders})",
+                image_ids,
+            )
+            for row in cursor.fetchall():
+                date_taken = None
+                if row["date_taken"]:
+                    date_taken = datetime.fromisoformat(row["date_taken"])
+                result[row["image_id"]] = ImageMetadata(
+                    date_taken=date_taken,
+                    latitude=row["latitude"],
+                    longitude=row["longitude"],
+                    description=row["description"],
+                    location_name=row["location_name"],
+                    location_country=row["location_country"],
+                )
+        return result
 
     def has_attributes(self, image_id: str) -> bool:
         """Check if attributes exist for an image."""
