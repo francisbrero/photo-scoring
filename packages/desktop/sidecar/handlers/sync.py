@@ -150,9 +150,7 @@ async def start_sync(request: SyncRequest):
                     total_synced += synced_count
 
                     # Mark synced ids (those not in conflicts)
-                    conflict_ids = {
-                        c["image_id"] for c in result.get("conflicts", [])
-                    }
+                    conflict_ids = {c["image_id"] for c in result.get("conflicts", [])}
                     synced_ids = [
                         r["image_id"]
                         for r in records
@@ -178,14 +176,10 @@ async def start_sync(request: SyncRequest):
                             attrs = NormalizedAttributes(
                                 image_id=cid,
                                 composition=cloud_attrs.get("composition", 0),
-                                subject_strength=cloud_attrs.get(
-                                    "subject_strength", 0
-                                ),
+                                subject_strength=cloud_attrs.get("subject_strength", 0),
                                 visual_appeal=cloud_attrs.get("visual_appeal", 0),
                                 sharpness=cloud_attrs.get("sharpness", 0),
-                                exposure_balance=cloud_attrs.get(
-                                    "exposure_balance", 0
-                                ),
+                                exposure_balance=cloud_attrs.get("exposure_balance", 0),
                                 noise_level=cloud_attrs.get("noise_level", 0),
                                 model_name=cloud_attrs.get("model_name"),
                                 model_version=cloud_attrs.get("model_version"),
@@ -195,9 +189,7 @@ async def start_sync(request: SyncRequest):
 
                         cloud_meta = cloud_rec.get("metadata")
                         if cloud_meta:
-                            cache.store_metadata(
-                                cid, ImageMetadata(**cloud_meta)
-                            )
+                            cache.store_metadata(cid, ImageMetadata(**cloud_meta))
 
                         cache.mark_synced([cid])
 
@@ -226,22 +218,20 @@ async def start_sync(request: SyncRequest):
                 cloud_scored_at = None
                 if record.get("scored_at"):
                     try:
-                        cloud_scored_at = datetime.fromisoformat(
-                            record["scored_at"]
-                        )
+                        cloud_scored_at = datetime.fromisoformat(record["scored_at"])
                     except (ValueError, TypeError):
                         pass
 
                 # Only overwrite local if cloud is newer (or no local)
                 local = cache.get_attributes(rid)
                 if local is not None and local.scored_at is not None:
-                    if (
-                        cloud_scored_at is None
-                        or cloud_scored_at <= local.scored_at
-                    ):
-                        # Local is newer or equal — keep local, just
-                        # mark synced so it doesn't re-upload
-                        cache.mark_synced([rid])
+                    if cloud_scored_at is None or cloud_scored_at <= local.scored_at:
+                        # Local is newer or equal — keep local.
+                        # Do NOT mark_synced: if the row is still
+                        # pending upload (push failed), it must remain
+                        # unsynced so the next push retries it.
+                        # Already-synced rows won't re-upload anyway
+                        # (scored_at <= synced_at).
                         continue
 
                 attrs = NormalizedAttributes(

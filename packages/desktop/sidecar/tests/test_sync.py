@@ -4,10 +4,9 @@ import json
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_asyncio
 
 from photo_score.storage.cache import Cache
 from photo_score.storage.models import ImageMetadata, NormalizedAttributes
@@ -88,7 +87,6 @@ class TestSyncOrchestration:
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("{}")
 
-        mock_push = AsyncMock(return_value={"synced": 500, "conflicts": []})
         mock_pull = AsyncMock(return_value={"attributes": [], "next_cursor": None})
 
         with (
@@ -107,7 +105,7 @@ class TestSyncOrchestration:
 
             from handlers.sync import start_sync, SyncRequest
 
-            result = await start_sync(SyncRequest(auth_token="test"))
+            await start_sync(SyncRequest(auth_token="test"))
 
         assert mock_client.push_attributes.call_count == 2
         # First batch has 500, second has 100
@@ -318,9 +316,7 @@ class TestSyncOrchestration:
             }
         ]
 
-        mock_push = AsyncMock(
-            return_value={"synced": 0, "conflicts": []}
-        )
+        mock_push = AsyncMock(return_value={"synced": 0, "conflicts": []})
         mock_pull = AsyncMock(
             side_effect=[
                 {
@@ -487,9 +483,7 @@ class TestSyncOrchestration:
         assert "Push error" in result.errors[0]
 
     @pytest.mark.asyncio
-    async def test_pull_skips_overwrite_when_local_newer(
-        self, temp_cache, tmp_path
-    ):
+    async def test_pull_skips_overwrite_when_local_newer(self, temp_cache, tmp_path):
         """Pull should NOT overwrite local data when local scored_at is newer."""
         from datetime import timedelta
 
@@ -546,9 +540,7 @@ class TestSyncOrchestration:
         assert local.composition == 0.9
 
     @pytest.mark.asyncio
-    async def test_cursor_persisted_on_partial_final_page(
-        self, temp_cache, tmp_path
-    ):
+    async def test_cursor_persisted_on_partial_final_page(self, temp_cache, tmp_path):
         """Cursor should be saved even when the final page is partial."""
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("{}")
@@ -595,3 +587,70 @@ class TestSyncOrchestration:
         saved = json.loads(settings_file.read_text())
         assert saved["sync_cursor_since"] == "2026-03-24T15:00:00+00:00"
         assert saved["sync_cursor_after_id"] == "uuid-partial"
+
+    @pytest.mark.asyncio
+    async def test_push_failure_then_pull_older_keeps_row_unsynced(
+        self, temp_cache, tmp_path
+    ):
+        """After push failure, pulling an older cloud row must NOT mark local as synced.
+
+        Regression: if mark_synced is called in the 'keep local' branch,
+        the newer local version is silently dropped from the retry queue.
+        """
+        from datetime import timedelta
+
+        local_time = datetime.now(timezone.utc)
+        attrs = _make_attrs("failed_push", scored_at=local_time, composition=0.9)
+        temp_cache.store_attributes(attrs)
+        # Do NOT mark_synced — simulates a row that hasn't been pushed yet
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("{}")
+
+        # Push fails for this row
+        mock_push = AsyncMock(side_effect=Exception("network error"))
+
+        # Pull returns an older cloud version of the same image
+        older_time = local_time - timedelta(hours=2)
+        mock_pull = AsyncMock(
+            side_effect=[
+                {
+                    "attributes": [
+                        {
+                            "image_id": "failed_push",
+                            "attributes": {
+                                "composition": 0.1,
+                                "subject_strength": 0.1,
+                                "visual_appeal": 0.1,
+                                "sharpness": 0.1,
+                                "exposure_balance": 0.1,
+                                "noise_level": 0.1,
+                            },
+                            "scored_at": older_time.isoformat(),
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            ]
+        )
+
+        with (
+            patch("handlers.sync.Cache", return_value=temp_cache),
+            patch("handlers.sync.SETTINGS_FILE", settings_file),
+            patch("handlers.sync.cloud_client") as mock_client,
+        ):
+            mock_client.push_attributes = mock_push
+            mock_client.pull_attributes = mock_pull
+
+            from handlers.sync import start_sync, SyncRequest
+
+            await start_sync(SyncRequest(auth_token="test"))
+
+        # Local data must be preserved
+        local = temp_cache.get_attributes("failed_push")
+        assert local.composition == 0.9
+
+        # Critical: row must still be unsynced so next push retries it
+        unsynced = temp_cache.list_unsynced_attributes()
+        unsynced_ids = [a.image_id for a in unsynced]
+        assert "failed_push" in unsynced_ids
