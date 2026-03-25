@@ -1,6 +1,7 @@
 """Sync router for bi-directional attribute sync between desktop and cloud."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
@@ -21,7 +22,7 @@ class AttributeRecord(BaseModel):
     """A single attribute record for push."""
 
     image_id: str
-    attributes: dict[str, float]
+    attributes: dict[str, Any]
     metadata: dict | None = None
     scored_at: str | None = None
 
@@ -51,7 +52,7 @@ class PullRecord(BaseModel):
     """A single record in pull response."""
 
     image_id: str
-    attributes: dict[str, float]
+    attributes: dict[str, Any]
     metadata: dict | None = None
     scored_at: str | None = None
 
@@ -259,9 +260,10 @@ async def pull_attributes(
             )
         )
 
-    # Build next cursor
+    # Build next cursor from last record seen (even on partial pages)
+    # so clients can persist their position and resume later
     next_cursor = None
-    if rows and len(rows) == limit:
+    if rows:
         last = rows[-1]
         next_cursor = PullCursor(
             since=last["updated_at"],

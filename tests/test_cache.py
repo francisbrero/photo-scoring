@@ -354,7 +354,7 @@ class TestSyncFeatures:
                 conn.commit()
 
             # Opening Cache should trigger migration
-            cache = Cache(db_path)
+            Cache(db_path)
 
             # Verify columns exist
             with sqlite3.connect(db_path) as conn:

@@ -223,12 +223,26 @@ async def start_sync(request: SyncRequest):
             for record in records:
                 rid = record["image_id"]
                 rattrs = record.get("attributes", {})
-                scored_at = None
+                cloud_scored_at = None
                 if record.get("scored_at"):
                     try:
-                        scored_at = datetime.fromisoformat(record["scored_at"])
+                        cloud_scored_at = datetime.fromisoformat(
+                            record["scored_at"]
+                        )
                     except (ValueError, TypeError):
                         pass
+
+                # Only overwrite local if cloud is newer (or no local)
+                local = cache.get_attributes(rid)
+                if local is not None and local.scored_at is not None:
+                    if (
+                        cloud_scored_at is None
+                        or cloud_scored_at <= local.scored_at
+                    ):
+                        # Local is newer or equal — keep local, just
+                        # mark synced so it doesn't re-upload
+                        cache.mark_synced([rid])
+                        continue
 
                 attrs = NormalizedAttributes(
                     image_id=rid,
@@ -240,7 +254,7 @@ async def start_sync(request: SyncRequest):
                     noise_level=rattrs.get("noise_level", 0),
                     model_name=rattrs.get("model_name"),
                     model_version=rattrs.get("model_version"),
-                    scored_at=scored_at,
+                    scored_at=cloud_scored_at,
                 )
                 cache.store_attributes(attrs)
                 cache.mark_synced([rid])
@@ -249,12 +263,16 @@ async def start_sync(request: SyncRequest):
                 if rmeta:
                     cache.store_metadata(rid, ImageMetadata(**rmeta))
 
-            # Update cursor
+            # Advance cursor from response (always present when
+            # records are returned)
             next_cursor = result.get("next_cursor")
             if next_cursor:
                 cursor_since = next_cursor["since"]
                 cursor_after_id = next_cursor["after_id"]
-            else:
+
+            # Stop when we got a partial page (fewer than default limit)
+            # — that means we've consumed everything
+            if len(records) < 500:
                 break
 
         # Persist cursor to settings

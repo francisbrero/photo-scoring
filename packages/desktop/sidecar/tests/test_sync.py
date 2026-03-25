@@ -286,12 +286,12 @@ class TestSyncOrchestration:
         assert "reconciled" not in ids
 
     @pytest.mark.asyncio
-    async def test_pull_loops_until_empty(self, temp_cache, tmp_path):
-        """Should loop pull_attributes until empty page."""
+    async def test_pull_loops_until_partial_page(self, temp_cache, tmp_path):
+        """Should loop pull until a partial page (< 500 records)."""
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("{}")
 
-        page1_attrs = {
+        base_attrs = {
             "composition": 0.5,
             "subject_strength": 0.5,
             "visual_appeal": 0.5,
@@ -300,20 +300,43 @@ class TestSyncOrchestration:
             "noise_level": 0.5,
         }
 
-        mock_push = AsyncMock(return_value={"synced": 0, "conflicts": []})
+        # Build a full page (500 records) for page 1
+        page1_records = [
+            {
+                "image_id": f"pull_{i}",
+                "attributes": base_attrs,
+                "scored_at": None,
+            }
+            for i in range(500)
+        ]
+        # Page 2 is partial (1 record) — triggers stop
+        page2_records = [
+            {
+                "image_id": "pull_last",
+                "attributes": base_attrs,
+                "scored_at": None,
+            }
+        ]
+
+        mock_push = AsyncMock(
+            return_value={"synced": 0, "conflicts": []}
+        )
         mock_pull = AsyncMock(
             side_effect=[
                 {
-                    "attributes": [
-                        {
-                            "image_id": "pull1",
-                            "attributes": page1_attrs,
-                            "scored_at": None,
-                        }
-                    ],
-                    "next_cursor": {"since": "2026-03-24T10:00:00+00:00", "after_id": "uuid-1"},
+                    "attributes": page1_records,
+                    "next_cursor": {
+                        "since": "2026-03-24T10:00:00+00:00",
+                        "after_id": "uuid-500",
+                    },
                 },
-                {"attributes": [], "next_cursor": None},
+                {
+                    "attributes": page2_records,
+                    "next_cursor": {
+                        "since": "2026-03-24T11:00:00+00:00",
+                        "after_id": "uuid-last",
+                    },
+                },
             ]
         )
 
@@ -329,10 +352,10 @@ class TestSyncOrchestration:
 
             await start_sync(SyncRequest(auth_token="test"))
 
-        # Should have called pull twice (page + empty)
+        # Should have called pull twice (full page + partial page)
         assert mock_pull.call_count == 2
-        # Record should be in local cache
-        local = temp_cache.get_attributes("pull1")
+        # Last record should be in local cache
+        local = temp_cache.get_attributes("pull_last")
         assert local is not None
         assert local.composition == 0.5
 
@@ -462,3 +485,113 @@ class TestSyncOrchestration:
         assert result.status == "partial"
         assert len(result.errors) > 0
         assert "Push error" in result.errors[0]
+
+    @pytest.mark.asyncio
+    async def test_pull_skips_overwrite_when_local_newer(
+        self, temp_cache, tmp_path
+    ):
+        """Pull should NOT overwrite local data when local scored_at is newer."""
+        from datetime import timedelta
+
+        # Local record scored 2 hours ago
+        local_time = datetime.now(timezone.utc)
+        attrs = _make_attrs("keep_local", scored_at=local_time, composition=0.9)
+        temp_cache.store_attributes(attrs)
+        temp_cache.mark_synced(["keep_local"])
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("{}")
+
+        # Cloud has an older version
+        older_time = local_time - timedelta(hours=2)
+        pulled_attrs = {
+            "composition": 0.1,
+            "subject_strength": 0.1,
+            "visual_appeal": 0.1,
+            "sharpness": 0.1,
+            "exposure_balance": 0.1,
+            "noise_level": 0.1,
+        }
+
+        mock_push = AsyncMock(return_value={"synced": 0, "conflicts": []})
+        mock_pull = AsyncMock(
+            side_effect=[
+                {
+                    "attributes": [
+                        {
+                            "image_id": "keep_local",
+                            "attributes": pulled_attrs,
+                            "scored_at": older_time.isoformat(),
+                        }
+                    ],
+                    "next_cursor": None,
+                },
+            ]
+        )
+
+        with (
+            patch("handlers.sync.Cache", return_value=temp_cache),
+            patch("handlers.sync.SETTINGS_FILE", settings_file),
+            patch("handlers.sync.cloud_client") as mock_client,
+        ):
+            mock_client.push_attributes = mock_push
+            mock_client.pull_attributes = mock_pull
+
+            from handlers.sync import start_sync, SyncRequest
+
+            await start_sync(SyncRequest(auth_token="test"))
+
+        # Local should still have the newer composition
+        local = temp_cache.get_attributes("keep_local")
+        assert local.composition == 0.9
+
+    @pytest.mark.asyncio
+    async def test_cursor_persisted_on_partial_final_page(
+        self, temp_cache, tmp_path
+    ):
+        """Cursor should be saved even when the final page is partial."""
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("{}")
+
+        pulled_attrs = {
+            "composition": 0.5,
+            "subject_strength": 0.5,
+            "visual_appeal": 0.5,
+            "sharpness": 0.5,
+            "exposure_balance": 0.5,
+            "noise_level": 0.5,
+        }
+
+        mock_push = AsyncMock(return_value={"synced": 0, "conflicts": []})
+        # Single partial page with next_cursor (API now always returns it)
+        mock_pull = AsyncMock(
+            return_value={
+                "attributes": [
+                    {
+                        "image_id": "partial_img",
+                        "attributes": pulled_attrs,
+                        "scored_at": None,
+                    }
+                ],
+                "next_cursor": {
+                    "since": "2026-03-24T15:00:00+00:00",
+                    "after_id": "uuid-partial",
+                },
+            }
+        )
+
+        with (
+            patch("handlers.sync.Cache", return_value=temp_cache),
+            patch("handlers.sync.SETTINGS_FILE", settings_file),
+            patch("handlers.sync.cloud_client") as mock_client,
+        ):
+            mock_client.push_attributes = mock_push
+            mock_client.pull_attributes = mock_pull
+
+            from handlers.sync import start_sync, SyncRequest
+
+            await start_sync(SyncRequest(auth_token="test"))
+
+        saved = json.loads(settings_file.read_text())
+        assert saved["sync_cursor_since"] == "2026-03-24T15:00:00+00:00"
+        assert saved["sync_cursor_after_id"] == "uuid-partial"

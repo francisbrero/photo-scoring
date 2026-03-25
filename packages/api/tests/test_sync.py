@@ -218,6 +218,37 @@ class TestPushAttributes:
         )
         assert response.status_code == 422
 
+    def test_push_accepts_mixed_type_attributes(self, client, mock_supabase):
+        """Attributes dict may contain strings (model_name, image_id)."""
+        _mock_select_chain(mock_supabase.table.return_value, [])
+        mock_supabase.table.return_value.insert.return_value.execute.return_value = MagicMock()
+
+        response = client.post(
+            "/api/sync/attributes",
+            json={
+                "attributes": [
+                    {
+                        "image_id": "abc123",
+                        "attributes": {
+                            "image_id": "abc123",
+                            "composition": 0.8,
+                            "subject_strength": 0.7,
+                            "visual_appeal": 0.6,
+                            "sharpness": 0.9,
+                            "exposure_balance": 0.85,
+                            "noise_level": 0.75,
+                            "model_name": "cloud",
+                            "model_version": "v1",
+                        },
+                        "scored_at": "2026-03-24T10:00:00+00:00",
+                    }
+                ]
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["synced"] == 1
+
     def test_push_none_scored_at_loses_to_existing(self, client, mock_supabase):
         """None scored_at should lose to any non-None cloud scored_at."""
         cloud_row = {
@@ -309,6 +340,8 @@ class TestPullAttributes:
         assert data["attributes"][0]["metadata"] == {
             "description": "A photo",
         }
+        # Even a partial page returns next_cursor for persistence
+        assert data["next_cursor"] is not None
 
     def test_pull_incremental_cursor(self, client, mock_supabase):
         """Should pass cursor params to query."""
@@ -330,6 +363,34 @@ class TestPullAttributes:
         data = response.json()
         assert data["attributes"] == []
         assert data["next_cursor"] is None
+
+    def test_pull_partial_page_has_cursor(self, client, mock_supabase):
+        """Partial (final) page should still return next_cursor."""
+        mock_table = MagicMock()
+        _mock_query_chain(
+            mock_table,
+            [
+                {
+                    "id": "uuid-1",
+                    "image_hash": "img1",
+                    "attributes": {"composition": 0.8},
+                    "scored_at": None,
+                    "updated_at": "2026-03-24T10:00:00+00:00",
+                }
+            ],
+        )
+
+        mock_supabase.table.return_value = mock_table
+
+        response = client.get("/api/sync/attributes")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["attributes"]) == 1
+        # Partial page (1 record < default 500 limit) still has cursor
+        assert data["next_cursor"] is not None
+        assert data["next_cursor"]["since"] == "2026-03-24T10:00:00+00:00"
+        assert data["next_cursor"]["after_id"] == "uuid-1"
 
     def test_pull_empty_result(self, client, mock_supabase):
         """Should return empty list when no records."""
