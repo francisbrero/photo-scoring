@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 PUSH_BATCH_SIZE = 500
 
+# Sync-eligible model identity — must match the cloud API (packages/api)
+SYNC_MODEL_NAME = "anthropic/claude-3.5-sonnet"
+SYNC_MODEL_VERSION = "cloud-v1"
+
 # Settings file for persisting sync cursor
 SETTINGS_DIR = Path.home() / ".photo_score"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -78,7 +82,9 @@ def _save_settings(settings: dict) -> None:
 async def get_sync_status():
     """Get current sync status."""
     cache = Cache()
-    unsynced = cache.list_unsynced_attributes()
+    unsynced = cache.list_unsynced_attributes(
+        model_name=SYNC_MODEL_NAME, model_version=SYNC_MODEL_VERSION
+    )
     return SyncStatusResponse(
         is_syncing=_sync_state["is_syncing"],
         last_sync=_sync_state["last_sync"],
@@ -108,10 +114,15 @@ async def start_sync(request: SyncRequest):
         cursor_after_id = settings.get("sync_cursor_after_id")
 
         # --- PUSH PHASE ---
-        unsynced = cache.list_unsynced_attributes()
+        # Only sync desktop cloud rows (not local or CLI cloud rows)
+        unsynced = cache.list_unsynced_attributes(
+            model_name=SYNC_MODEL_NAME, model_version=SYNC_MODEL_VERSION
+        )
         if unsynced:
             image_ids = [a.image_id for a in unsynced]
-            metadata_map = cache.list_all_metadata_for(image_ids)
+            metadata_map = cache.list_all_metadata_for(
+                image_ids, model_name=SYNC_MODEL_NAME
+            )
 
             # Batch into groups of PUSH_BATCH_SIZE
             for i in range(0, len(unsynced), PUSH_BATCH_SIZE):
@@ -151,13 +162,13 @@ async def start_sync(request: SyncRequest):
 
                     # Mark synced ids (those not in conflicts)
                     conflict_ids = {c["image_id"] for c in result.get("conflicts", [])}
-                    synced_ids = [
-                        r["image_id"]
+                    synced_rows = [
+                        (r["image_id"], SYNC_MODEL_NAME, SYNC_MODEL_VERSION)
                         for r in records
                         if r["image_id"] not in conflict_ids
                     ]
-                    if synced_ids:
-                        cache.mark_synced(synced_ids)
+                    if synced_rows:
+                        cache.mark_synced(synced_rows)
 
                     # Handle conflicts: overwrite local with cloud version
                     for conflict in result.get("conflicts", []):
@@ -181,17 +192,37 @@ async def start_sync(request: SyncRequest):
                                 sharpness=cloud_attrs.get("sharpness", 0),
                                 exposure_balance=cloud_attrs.get("exposure_balance", 0),
                                 noise_level=cloud_attrs.get("noise_level", 0),
-                                model_name=cloud_attrs.get("model_name"),
-                                model_version=cloud_attrs.get("model_version"),
+                                model_name=cloud_attrs.get(
+                                    "model_name", SYNC_MODEL_NAME
+                                ),
+                                model_version=cloud_attrs.get(
+                                    "model_version", SYNC_MODEL_VERSION
+                                ),
                                 scored_at=scored_at,
                             )
                             cache.store_attributes(attrs)
 
                         cloud_meta = cloud_rec.get("metadata")
                         if cloud_meta:
-                            cache.store_metadata(cid, ImageMetadata(**cloud_meta))
+                            cache.store_metadata(
+                                cid,
+                                ImageMetadata(**cloud_meta),
+                                model_name=cloud_attrs.get(
+                                    "model_name", SYNC_MODEL_NAME
+                                ),
+                            )
 
-                        cache.mark_synced([cid])
+                        cache.mark_synced(
+                            [
+                                (
+                                    cid,
+                                    cloud_attrs.get("model_name", SYNC_MODEL_NAME),
+                                    cloud_attrs.get(
+                                        "model_version", SYNC_MODEL_VERSION
+                                    ),
+                                )
+                            ]
+                        )
 
                 except Exception as e:
                     logger.error(f"Push batch failed: {e}")
@@ -215,6 +246,8 @@ async def start_sync(request: SyncRequest):
             for record in records:
                 rid = record["image_id"]
                 rattrs = record.get("attributes", {})
+                r_model_name = rattrs.get("model_name", SYNC_MODEL_NAME)
+                r_model_version = rattrs.get("model_version", SYNC_MODEL_VERSION)
                 cloud_scored_at = None
                 if record.get("scored_at"):
                     try:
@@ -223,15 +256,11 @@ async def start_sync(request: SyncRequest):
                         pass
 
                 # Only overwrite local if cloud is newer (or no local)
-                local = cache.get_attributes(rid)
+                local = cache.get_attributes(
+                    rid, model_name=r_model_name, model_version=r_model_version
+                )
                 if local is not None and local.scored_at is not None:
                     if cloud_scored_at is None or cloud_scored_at <= local.scored_at:
-                        # Local is newer or equal — keep local.
-                        # Do NOT mark_synced: if the row is still
-                        # pending upload (push failed), it must remain
-                        # unsynced so the next push retries it.
-                        # Already-synced rows won't re-upload anyway
-                        # (scored_at <= synced_at).
                         continue
 
                 attrs = NormalizedAttributes(
@@ -242,16 +271,18 @@ async def start_sync(request: SyncRequest):
                     sharpness=rattrs.get("sharpness", 0),
                     exposure_balance=rattrs.get("exposure_balance", 0),
                     noise_level=rattrs.get("noise_level", 0),
-                    model_name=rattrs.get("model_name"),
-                    model_version=rattrs.get("model_version"),
+                    model_name=r_model_name,
+                    model_version=r_model_version,
                     scored_at=cloud_scored_at,
                 )
                 cache.store_attributes(attrs)
-                cache.mark_synced([rid])
+                cache.mark_synced([(rid, r_model_name, r_model_version)])
 
                 rmeta = record.get("metadata")
                 if rmeta:
-                    cache.store_metadata(rid, ImageMetadata(**rmeta))
+                    cache.store_metadata(
+                        rid, ImageMetadata(**rmeta), model_name=r_model_name
+                    )
 
             # Advance cursor from response (always present when
             # records are returned)
@@ -271,7 +302,11 @@ async def start_sync(request: SyncRequest):
         _save_settings(settings)
 
         _sync_state["last_sync"] = datetime.now(timezone.utc).isoformat()
-        _sync_state["pending_count"] = len(cache.list_unsynced_attributes())
+        _sync_state["pending_count"] = len(
+            cache.list_unsynced_attributes(
+                model_name=SYNC_MODEL_NAME, model_version=SYNC_MODEL_VERSION
+            )
+        )
 
         return SyncResponse(
             status="completed" if not errors else "partial",

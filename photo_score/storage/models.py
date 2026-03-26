@@ -43,8 +43,8 @@ class NormalizedAttributes(BaseModel):
     noise_level: float = Field(ge=0.0, le=1.0)
 
     # Metadata
-    model_name: Optional[str] = None
-    model_version: Optional[str] = None
+    model_name: str = Field(default="unknown")
+    model_version: str = Field(default="unknown")
     scored_at: Optional[datetime] = None
 
 

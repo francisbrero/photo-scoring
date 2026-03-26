@@ -52,28 +52,31 @@ class Cache:
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS normalized_attributes (
-                    image_id TEXT PRIMARY KEY,
+                    image_id TEXT NOT NULL,
                     composition REAL NOT NULL,
                     subject_strength REAL NOT NULL,
                     visual_appeal REAL NOT NULL,
                     sharpness REAL NOT NULL,
                     exposure_balance REAL NOT NULL,
                     noise_level REAL NOT NULL,
-                    model_name TEXT,
-                    model_version TEXT,
+                    model_name TEXT NOT NULL DEFAULT 'unknown',
+                    model_version TEXT NOT NULL DEFAULT 'unknown',
                     scored_at TEXT,
-                    synced_at TEXT
+                    synced_at TEXT,
+                    PRIMARY KEY (image_id, model_name, model_version)
                 )
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS image_metadata (
-                    image_id TEXT PRIMARY KEY,
+                    image_id TEXT NOT NULL,
+                    model_name TEXT NOT NULL DEFAULT 'unknown',
                     date_taken TEXT,
                     latitude REAL,
                     longitude REAL,
                     description TEXT,
                     location_name TEXT,
-                    location_country TEXT
+                    location_country TEXT,
+                    PRIMARY KEY (image_id, model_name)
                 )
             """)
             conn.execute("""
@@ -88,20 +91,124 @@ class Cache:
             conn.commit()
 
     def _migrate_schema(self) -> None:
-        """Add new columns to existing databases."""
+        """Migrate old schemas to current version."""
         with sqlite3.connect(self.db_path) as conn:
-            # Get existing columns
+            # --- Migrate normalized_attributes ---
             cursor = conn.execute("PRAGMA table_info(normalized_attributes)")
-            existing = {row[1] for row in cursor.fetchall()}
+            columns = {row[1]: row for row in cursor.fetchall()}
 
-            if "scored_at" not in existing:
+            # Add scored_at/synced_at if missing (v1 migration)
+            if "scored_at" not in columns:
                 conn.execute(
                     "ALTER TABLE normalized_attributes ADD COLUMN scored_at TEXT"
                 )
-            if "synced_at" not in existing:
+            if "synced_at" not in columns:
                 conn.execute(
                     "ALTER TABLE normalized_attributes ADD COLUMN synced_at TEXT"
                 )
+
+            # Check if PK is single-column (old schema: image_id TEXT PRIMARY KEY)
+            # pk column index (5th element) > 0 means it's part of the PK
+            pk_columns = [name for name, row in columns.items() if row[5] > 0]
+            if pk_columns == ["image_id"]:
+                # Old single-column PK — migrate to composite PK
+                conn.execute(
+                    "UPDATE normalized_attributes SET model_name = 'unknown' WHERE model_name IS NULL"
+                )
+                conn.execute(
+                    "UPDATE normalized_attributes SET model_version = 'unknown' WHERE model_version IS NULL"
+                )
+                conn.execute("""
+                    CREATE TABLE normalized_attributes_new (
+                        image_id TEXT NOT NULL,
+                        composition REAL NOT NULL,
+                        subject_strength REAL NOT NULL,
+                        visual_appeal REAL NOT NULL,
+                        sharpness REAL NOT NULL,
+                        exposure_balance REAL NOT NULL,
+                        noise_level REAL NOT NULL,
+                        model_name TEXT NOT NULL DEFAULT 'unknown',
+                        model_version TEXT NOT NULL DEFAULT 'unknown',
+                        scored_at TEXT,
+                        synced_at TEXT,
+                        PRIMARY KEY (image_id, model_name, model_version)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO normalized_attributes_new
+                    SELECT image_id, composition, subject_strength, visual_appeal,
+                           sharpness, exposure_balance, noise_level,
+                           model_name, model_version, scored_at, synced_at
+                    FROM normalized_attributes
+                """)
+                conn.execute("DROP TABLE normalized_attributes")
+                conn.execute(
+                    "ALTER TABLE normalized_attributes_new RENAME TO normalized_attributes"
+                )
+
+            # --- Migrate image_metadata ---
+            cursor = conn.execute("PRAGMA table_info(image_metadata)")
+            meta_columns = {row[1]: row for row in cursor.fetchall()}
+
+            if "model_name" not in meta_columns:
+                # Old schema without model_name — add column and migrate to composite PK
+                conn.execute("""
+                    CREATE TABLE image_metadata_new (
+                        image_id TEXT NOT NULL,
+                        model_name TEXT NOT NULL DEFAULT 'unknown',
+                        date_taken TEXT,
+                        latitude REAL,
+                        longitude REAL,
+                        description TEXT,
+                        location_name TEXT,
+                        location_country TEXT,
+                        PRIMARY KEY (image_id, model_name)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO image_metadata_new
+                    (image_id, model_name, date_taken, latitude, longitude,
+                     description, location_name, location_country)
+                    SELECT image_id, 'unknown', date_taken, latitude, longitude,
+                           description, location_name, location_country
+                    FROM image_metadata
+                """)
+                conn.execute("DROP TABLE image_metadata")
+                conn.execute("ALTER TABLE image_metadata_new RENAME TO image_metadata")
+            else:
+                # model_name column exists — check if PK needs migration
+                meta_pk_columns = [
+                    name for name, row in meta_columns.items() if row[5] > 0
+                ]
+                if meta_pk_columns == ["image_id"]:
+                    # Single-column PK with model_name column — migrate to composite PK
+                    conn.execute(
+                        "UPDATE image_metadata SET model_name = 'unknown' WHERE model_name IS NULL"
+                    )
+                    conn.execute("""
+                        CREATE TABLE image_metadata_new (
+                            image_id TEXT NOT NULL,
+                            model_name TEXT NOT NULL DEFAULT 'unknown',
+                            date_taken TEXT,
+                            latitude REAL,
+                            longitude REAL,
+                            description TEXT,
+                            location_name TEXT,
+                            location_country TEXT,
+                            PRIMARY KEY (image_id, model_name)
+                        )
+                    """)
+                    conn.execute("""
+                        INSERT INTO image_metadata_new
+                        SELECT image_id, model_name, date_taken, latitude, longitude,
+                               description, location_name, location_country
+                        FROM image_metadata
+                    """)
+                    conn.execute("DROP TABLE image_metadata")
+                    conn.execute(
+                        "ALTER TABLE image_metadata_new RENAME TO image_metadata"
+                    )
+
             conn.commit()
 
     def get_inference(
@@ -154,14 +261,41 @@ class Cache:
             )
             conn.commit()
 
-    def get_attributes(self, image_id: str) -> NormalizedAttributes | None:
-        """Retrieve cached normalized attributes."""
+    def get_attributes(
+        self,
+        image_id: str,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ) -> NormalizedAttributes | None:
+        """Retrieve cached normalized attributes.
+
+        Args:
+            image_id: Image hash.
+            model_name: If provided, filter to this model.
+            model_version: If provided, filter to this version.
+
+        When all three are provided, does exact PK lookup.
+        When partial/none, returns most recent by scored_at.
+        """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                "SELECT * FROM normalized_attributes WHERE image_id = ?",
-                (image_id,),
-            )
+
+            if model_name is not None and model_version is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM normalized_attributes WHERE image_id = ? AND model_name = ? AND model_version = ?",
+                    (image_id, model_name, model_version),
+                )
+            elif model_name is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM normalized_attributes WHERE image_id = ? AND model_name = ? ORDER BY scored_at DESC LIMIT 1",
+                    (image_id, model_name),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM normalized_attributes WHERE image_id = ? ORDER BY scored_at DESC LIMIT 1",
+                    (image_id,),
+                )
+
             row = cursor.fetchone()
             if row is None:
                 return None
@@ -186,7 +320,8 @@ class Cache:
     def store_attributes(self, attributes: NormalizedAttributes) -> None:
         """Store normalized attributes in cache.
 
-        Uses INSERT ... ON CONFLICT to preserve synced_at on updates.
+        Uses INSERT ... ON CONFLICT on composite PK (image_id, model_name, model_version)
+        to preserve synced_at on updates.
         """
         scored_at_str = None
         if attributes.scored_at is not None:
@@ -200,15 +335,13 @@ class Cache:
                  sharpness, exposure_balance, noise_level, model_name, model_version,
                  scored_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(image_id) DO UPDATE SET
+                ON CONFLICT(image_id, model_name, model_version) DO UPDATE SET
                     composition = excluded.composition,
                     subject_strength = excluded.subject_strength,
                     visual_appeal = excluded.visual_appeal,
                     sharpness = excluded.sharpness,
                     exposure_balance = excluded.exposure_balance,
                     noise_level = excluded.noise_level,
-                    model_name = excluded.model_name,
-                    model_version = excluded.model_version,
                     scored_at = excluded.scored_at
                 """,
                 (
@@ -226,29 +359,59 @@ class Cache:
             )
             conn.commit()
 
-    def mark_synced(self, image_ids: list[str]) -> None:
-        """Mark attributes as synced by setting synced_at to now (UTC)."""
-        if not image_ids:
+    def mark_synced(self, rows: list[tuple[str, str, str]] | list[str]) -> None:
+        """Mark attributes as synced by setting synced_at to now (UTC).
+
+        Args:
+            rows: List of (image_id, model_name, model_version) tuples,
+                  or list of image_ids for backward compatibility.
+        """
+        if not rows:
             return
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
-            placeholders = ",".join("?" for _ in image_ids)
-            conn.execute(
-                f"UPDATE normalized_attributes SET synced_at = ? WHERE image_id IN ({placeholders})",
-                [now, *image_ids],
-            )
+            # Detect whether caller passed tuples or plain strings
+            if isinstance(rows[0], str):
+                # Backward compat: mark all rows for these image_ids
+                placeholders = ",".join("?" for _ in rows)
+                conn.execute(
+                    f"UPDATE normalized_attributes SET synced_at = ? WHERE image_id IN ({placeholders})",
+                    [now, *rows],
+                )
+            else:
+                # New API: mark specific (image_id, model_name, model_version) rows
+                for image_id, model_name, model_version in rows:
+                    conn.execute(
+                        "UPDATE normalized_attributes SET synced_at = ? WHERE image_id = ? AND model_name = ? AND model_version = ?",
+                        (now, image_id, model_name, model_version),
+                    )
             conn.commit()
 
-    def list_unsynced_attributes(self) -> list[NormalizedAttributes]:
-        """Return attributes that have never been synced or changed since last sync."""
+    def list_unsynced_attributes(
+        self,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ) -> list[NormalizedAttributes]:
+        """Return attributes that have never been synced or changed since last sync.
+
+        Args:
+            model_name: If provided, only return rows matching this model.
+            model_version: If provided, also filter by version.
+        """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                """
-                SELECT * FROM normalized_attributes
-                WHERE synced_at IS NULL OR scored_at > synced_at
-                """
-            )
+
+            query = "SELECT * FROM normalized_attributes WHERE (synced_at IS NULL OR scored_at > synced_at)"
+            params: list = []
+
+            if model_name is not None:
+                query += " AND model_name = ?"
+                params.append(model_name)
+            if model_version is not None:
+                query += " AND model_version = ?"
+                params.append(model_version)
+
+            cursor = conn.execute(query, params)
             results = []
             for row in cursor.fetchall():
                 scored_at = None
@@ -270,22 +433,41 @@ class Cache:
                 )
             return results
 
-    def list_all_metadata_for(self, image_ids: list[str]) -> dict[str, ImageMetadata]:
-        """Batch lookup metadata by image_id list."""
+    def list_all_metadata_for(
+        self,
+        image_ids: list[str],
+        model_name: str | None = None,
+    ) -> dict[str, ImageMetadata]:
+        """Batch lookup metadata by image_id list.
+
+        Args:
+            image_ids: List of image hashes to look up.
+            model_name: If provided, return only metadata from this model.
+                        If None, return one per image_id (latest by rowid).
+        """
         if not image_ids:
             return {}
         result: dict[str, ImageMetadata] = {}
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             placeholders = ",".join("?" for _ in image_ids)
-            cursor = conn.execute(
-                f"SELECT * FROM image_metadata WHERE image_id IN ({placeholders})",
-                image_ids,
-            )
+
+            if model_name is not None:
+                cursor = conn.execute(
+                    f"SELECT * FROM image_metadata WHERE image_id IN ({placeholders}) AND model_name = ?",
+                    [*image_ids, model_name],
+                )
+            else:
+                cursor = conn.execute(
+                    f"SELECT * FROM image_metadata WHERE image_id IN ({placeholders})",
+                    image_ids,
+                )
+
             for row in cursor.fetchall():
                 date_taken = None
                 if row["date_taken"]:
                     date_taken = datetime.fromisoformat(row["date_taken"])
+                # When no model filter, last row wins (one per image_id)
                 result[row["image_id"]] = ImageMetadata(
                     date_taken=date_taken,
                     latitude=row["latitude"],
@@ -296,23 +478,57 @@ class Cache:
                 )
         return result
 
-    def has_attributes(self, image_id: str) -> bool:
+    def has_attributes(
+        self,
+        image_id: str,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ) -> bool:
         """Check if attributes exist for an image."""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT 1 FROM normalized_attributes WHERE image_id = ?",
-                (image_id,),
-            )
+            if model_name is not None and model_version is not None:
+                cursor = conn.execute(
+                    "SELECT 1 FROM normalized_attributes WHERE image_id = ? AND model_name = ? AND model_version = ?",
+                    (image_id, model_name, model_version),
+                )
+            elif model_name is not None:
+                cursor = conn.execute(
+                    "SELECT 1 FROM normalized_attributes WHERE image_id = ? AND model_name = ?",
+                    (image_id, model_name),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT 1 FROM normalized_attributes WHERE image_id = ?",
+                    (image_id,),
+                )
             return cursor.fetchone() is not None
 
-    def get_metadata(self, image_id: str) -> Optional[ImageMetadata]:
-        """Retrieve cached image metadata."""
+    def get_metadata(
+        self,
+        image_id: str,
+        model_name: str | None = None,
+    ) -> Optional[ImageMetadata]:
+        """Retrieve cached image metadata.
+
+        Args:
+            image_id: Image hash.
+            model_name: If provided, exact (image_id, model_name) lookup.
+                        If None, returns latest by rowid (backward compat).
+        """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                "SELECT * FROM image_metadata WHERE image_id = ?",
-                (image_id,),
-            )
+
+            if model_name is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM image_metadata WHERE image_id = ? AND model_name = ?",
+                    (image_id, model_name),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM image_metadata WHERE image_id = ? ORDER BY rowid DESC LIMIT 1",
+                    (image_id,),
+                )
+
             row = cursor.fetchone()
             if row is None:
                 return None
@@ -330,7 +546,12 @@ class Cache:
                 location_country=row["location_country"],
             )
 
-    def store_metadata(self, image_id: str, metadata: ImageMetadata) -> None:
+    def store_metadata(
+        self,
+        image_id: str,
+        metadata: ImageMetadata,
+        model_name: str = "unknown",
+    ) -> None:
         """Store image metadata in cache."""
         date_str = None
         if metadata.date_taken:
@@ -340,11 +561,12 @@ class Cache:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO image_metadata
-                (image_id, date_taken, latitude, longitude, description, location_name, location_country)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (image_id, model_name, date_taken, latitude, longitude, description, location_name, location_country)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     image_id,
+                    model_name,
                     date_str,
                     metadata.latitude,
                     metadata.longitude,
@@ -355,13 +577,23 @@ class Cache:
             )
             conn.commit()
 
-    def has_metadata(self, image_id: str) -> bool:
+    def has_metadata(
+        self,
+        image_id: str,
+        model_name: str | None = None,
+    ) -> bool:
         """Check if metadata exists for an image."""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT 1 FROM image_metadata WHERE image_id = ?",
-                (image_id,),
-            )
+            if model_name is not None:
+                cursor = conn.execute(
+                    "SELECT 1 FROM image_metadata WHERE image_id = ? AND model_name = ?",
+                    (image_id, model_name),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT 1 FROM image_metadata WHERE image_id = ?",
+                    (image_id,),
+                )
             return cursor.fetchone() is not None
 
     def get_critique(self, image_id: str) -> Optional[dict]:
