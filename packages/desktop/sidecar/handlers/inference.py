@@ -181,9 +181,7 @@ async def score_image(request: ScoreRequest):
                     exposure_balance=cloud_attrs["exposure_balance"],
                     noise_level=cloud_attrs["noise_level"],
                     model_name=cloud_attrs.get("model_name", CLOUD_MODEL_NAME),
-                    model_version=cloud_attrs.get(
-                        "model_version", CLOUD_MODEL_VERSION
-                    ),
+                    model_version=cloud_attrs.get("model_version", CLOUD_MODEL_VERSION),
                 )
                 attrs.scored_at = datetime.now(timezone.utc)
                 cache.store_attributes(attrs)
