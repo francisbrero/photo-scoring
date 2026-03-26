@@ -380,8 +380,10 @@ def rescore(
             result.final_score,
         )
 
-        # Get cached metadata if available
-        cached_metadata = cache.get_metadata(image.image_id)
+        # Get cached metadata from the same model that produced the attributes
+        cached_metadata = cache.get_metadata(
+            image.image_id, model_name=cached_attrs.model_name
+        )
         if cached_metadata is not None:
             result.metadata = cached_metadata
 

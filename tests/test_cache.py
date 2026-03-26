@@ -535,11 +535,11 @@ class TestMigration:
                 pk_cols = [name for name, row in columns.items() if row[5] > 0]
                 assert set(pk_cols) == {"image_id", "model_name"}
 
-            # Verify old data was migrated with model_name = "unknown"
+            # Verify old data was migrated to canonical cloud identity
             attrs = cache.get_attributes("old_img")
             assert attrs is not None
-            assert attrs.model_name == "unknown"
-            assert attrs.model_version == "unknown"
+            assert attrs.model_name == "anthropic/claude-3.5-sonnet"
+            assert attrs.model_version == "cloud-v1"
 
             meta = cache.get_metadata("old_img")
             assert meta is not None

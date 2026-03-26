@@ -15,6 +15,12 @@ from photo_score.storage.models import (
 DEFAULT_CACHE_DIR = Path.home() / ".photo_score"
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "cache.db"
 
+# Legacy migration identity: all pre-existing rows were produced by cloud
+# inference, so we normalize them to the canonical cloud identity that the
+# desktop sidecar filters on.  This prevents stranding rows after upgrade.
+_LEGACY_MODEL_NAME = "anthropic/claude-3.5-sonnet"
+_LEGACY_MODEL_VERSION = "cloud-v1"
+
 
 class Cache:
     """SQLite-based cache for inference results and normalized attributes."""
@@ -111,12 +117,14 @@ class Cache:
             # pk column index (5th element) > 0 means it's part of the PK
             pk_columns = [name for name, row in columns.items() if row[5] > 0]
             if pk_columns == ["image_id"]:
-                # Old single-column PK — migrate to composite PK
+                # Old single-column PK — migrate to composite PK.
+                # All pre-existing rows are from cloud inference (local didn't
+                # exist before this migration), so unconditionally normalize to
+                # the canonical cloud identity.  This keeps them visible to the
+                # desktop sidecar which filters on these exact values.
                 conn.execute(
-                    "UPDATE normalized_attributes SET model_name = 'unknown' WHERE model_name IS NULL"
-                )
-                conn.execute(
-                    "UPDATE normalized_attributes SET model_version = 'unknown' WHERE model_version IS NULL"
+                    "UPDATE normalized_attributes SET model_name = ?, model_version = ?",
+                    (_LEGACY_MODEL_NAME, _LEGACY_MODEL_VERSION),
                 )
                 conn.execute("""
                     CREATE TABLE normalized_attributes_new (
@@ -151,7 +159,8 @@ class Cache:
             meta_columns = {row[1]: row for row in cursor.fetchall()}
 
             if "model_name" not in meta_columns:
-                # Old schema without model_name — add column and migrate to composite PK
+                # Old schema without model_name — add column and migrate to composite PK.
+                # Normalize to the canonical cloud identity (same as attributes).
                 conn.execute("""
                     CREATE TABLE image_metadata_new (
                         image_id TEXT NOT NULL,
@@ -165,14 +174,17 @@ class Cache:
                         PRIMARY KEY (image_id, model_name)
                     )
                 """)
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO image_metadata_new
                     (image_id, model_name, date_taken, latitude, longitude,
                      description, location_name, location_country)
-                    SELECT image_id, 'unknown', date_taken, latitude, longitude,
+                    SELECT image_id, ?, date_taken, latitude, longitude,
                            description, location_name, location_country
                     FROM image_metadata
-                """)
+                """,
+                    (_LEGACY_MODEL_NAME,),
+                )
                 conn.execute("DROP TABLE image_metadata")
                 conn.execute("ALTER TABLE image_metadata_new RENAME TO image_metadata")
             else:
@@ -181,9 +193,11 @@ class Cache:
                     name for name, row in meta_columns.items() if row[5] > 0
                 ]
                 if meta_pk_columns == ["image_id"]:
-                    # Single-column PK with model_name column — migrate to composite PK
+                    # Single-column PK with model_name column — migrate to composite PK.
+                    # Unconditionally normalize (same rationale as attributes).
                     conn.execute(
-                        "UPDATE image_metadata SET model_name = 'unknown' WHERE model_name IS NULL"
+                        "UPDATE image_metadata SET model_name = ?",
+                        (_LEGACY_MODEL_NAME,),
                     )
                     conn.execute("""
                         CREATE TABLE image_metadata_new (
