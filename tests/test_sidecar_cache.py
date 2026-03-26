@@ -275,13 +275,21 @@ class TestMigrationPreservesDesktopVisibility:
                 "'unknown' model row should be migrated to cloud identity"
             )
 
-            # Rows that already had explicit model_name keep their model_name
-            # but get model_version normalized (was 20241022, now cloud-v1)
+            # Rows with explicit model_name preserve their identity (not relabeled)
             cloud_row = cache.get_attributes(
-                "cloud_model", "anthropic/claude-3.5-sonnet", CLOUD_MODEL_VERSION
+                "cloud_model", "anthropic/claude-3.5-sonnet", "20241022"
             )
             assert cloud_row is not None, (
-                "Cloud model row should be migrated to cloud-v1 version"
+                "Explicit model identity must be preserved during migration"
+            )
+            assert cloud_row.model_version == "20241022"
+
+            # Such rows are NOT visible under the desktop cloud-v1 filter
+            desktop_cloud = cache.get_attributes(
+                "cloud_model", CLOUD_MODEL_NAME, CLOUD_MODEL_VERSION
+            )
+            assert desktop_cloud is None, (
+                "Explicit model_version must not be relabeled to cloud-v1"
             )
 
             # Legacy metadata should also be visible

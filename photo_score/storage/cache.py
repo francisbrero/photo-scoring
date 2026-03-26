@@ -118,13 +118,24 @@ class Cache:
             pk_columns = [name for name, row in columns.items() if row[5] > 0]
             if pk_columns == ["image_id"]:
                 # Old single-column PK — migrate to composite PK.
-                # All pre-existing rows are from cloud inference (local didn't
-                # exist before this migration), so unconditionally normalize to
-                # the canonical cloud identity.  This keeps them visible to the
-                # desktop sidecar which filters on these exact values.
+                # Only normalize rows that lack a real model identity (NULL or
+                # 'unknown') to the canonical cloud pair.  Rows that already
+                # carry an explicit model_name (e.g. google/gemini-*) are
+                # preserved as-is; overwriting them would be data corruption.
                 conn.execute(
-                    "UPDATE normalized_attributes SET model_name = ?, model_version = ?",
+                    """UPDATE normalized_attributes
+                       SET model_name = ?, model_version = ?
+                       WHERE model_name IS NULL
+                          OR model_name = ''
+                          OR model_name = 'unknown'""",
                     (_LEGACY_MODEL_NAME, _LEGACY_MODEL_VERSION),
+                )
+                # Rows with an explicit model_name but NULL/unknown version
+                # get the version backfilled so the NOT NULL constraint holds.
+                conn.execute(
+                    """UPDATE normalized_attributes
+                       SET model_version = 'unknown'
+                       WHERE model_version IS NULL""",
                 )
                 conn.execute("""
                     CREATE TABLE normalized_attributes_new (
@@ -194,9 +205,12 @@ class Cache:
                 ]
                 if meta_pk_columns == ["image_id"]:
                     # Single-column PK with model_name column — migrate to composite PK.
-                    # Unconditionally normalize (same rationale as attributes).
+                    # Only normalize NULL/empty/unknown rows; preserve explicit identities.
                     conn.execute(
-                        "UPDATE image_metadata SET model_name = ?",
+                        """UPDATE image_metadata SET model_name = ?
+                           WHERE model_name IS NULL
+                              OR model_name = ''
+                              OR model_name = 'unknown'""",
                         (_LEGACY_MODEL_NAME,),
                     )
                     conn.execute("""

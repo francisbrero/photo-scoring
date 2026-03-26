@@ -354,12 +354,16 @@ def rescore(
     reducer = ScoringReducer(config)
     explainer = ExplanationGenerator(config)
 
-    # Process images from cache only (no model filter — use latest available)
+    # Process images from cache filtered by config model identity
+    model_name = config.model.name
+    model_version = config.model.version
     results: list[ScoringResult] = []
     missing = 0
 
     for image in images:
-        cached_attrs = cache.get_attributes(image.image_id)
+        cached_attrs = cache.get_attributes(
+            image.image_id, model_name=model_name, model_version=model_version
+        )
 
         if cached_attrs is None:
             missing += 1

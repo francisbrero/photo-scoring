@@ -545,6 +545,77 @@ class TestMigration:
             assert meta is not None
             assert meta.description == "Old description"
 
+    def test_migration_preserves_explicit_model_identity(self):
+        """Rows with explicit model_name should NOT be overwritten to cloud identity."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "explicit_model.db"
+
+            import sqlite3
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE normalized_attributes (
+                        image_id TEXT PRIMARY KEY,
+                        composition REAL NOT NULL,
+                        subject_strength REAL NOT NULL,
+                        visual_appeal REAL NOT NULL,
+                        sharpness REAL NOT NULL,
+                        exposure_balance REAL NOT NULL,
+                        noise_level REAL NOT NULL,
+                        model_name TEXT,
+                        model_version TEXT
+                    )
+                """)
+                # Row with explicit non-default model identity
+                conn.execute(
+                    """INSERT INTO normalized_attributes VALUES
+                       (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ("gemini_img", 0.7, 0.7, 0.7, 0.7, 0.7, 0.7,
+                     "google/gemini-1.5-pro", "exp-42"),
+                )
+                # Row with NULL model (genuinely legacy)
+                conn.execute(
+                    """INSERT INTO normalized_attributes
+                       (image_id, composition, subject_strength, visual_appeal,
+                        sharpness, exposure_balance, noise_level)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    ("legacy_img", 0.5, 0.5, 0.5, 0.5, 0.5, 0.5),
+                )
+                conn.execute("""
+                    CREATE TABLE image_metadata (
+                        image_id TEXT PRIMARY KEY,
+                        date_taken TEXT,
+                        latitude REAL,
+                        longitude REAL,
+                        description TEXT,
+                        location_name TEXT,
+                        location_country TEXT
+                    )
+                """)
+                conn.commit()
+
+            cache = Cache(db_path)
+
+            # Explicit model identity must be preserved
+            gemini = cache.get_attributes(
+                "gemini_img", "google/gemini-1.5-pro", "exp-42"
+            )
+            assert gemini is not None, "Explicit model identity must survive migration"
+            assert gemini.model_name == "google/gemini-1.5-pro"
+            assert gemini.model_version == "exp-42"
+
+            # It must NOT appear under the cloud identity
+            cloud_gemini = cache.get_attributes(
+                "gemini_img", "anthropic/claude-3.5-sonnet", "cloud-v1"
+            )
+            assert cloud_gemini is None, "Explicit model must not be relabeled as cloud"
+
+            # NULL model row should be normalized to cloud identity
+            legacy = cache.get_attributes(
+                "legacy_img", "anthropic/claude-3.5-sonnet", "cloud-v1"
+            )
+            assert legacy is not None, "NULL model row should become cloud identity"
+
     def test_migration_is_idempotent(self):
         """Running migration on already-migrated DB should be safe."""
         with tempfile.TemporaryDirectory() as tmpdir:
