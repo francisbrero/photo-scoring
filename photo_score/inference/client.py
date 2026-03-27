@@ -1,26 +1,19 @@
 """OpenRouter API client for vision model inference."""
 
-import base64
-import json
 import logging
 import os
-import re
 import time
-from io import BytesIO
 from pathlib import Path
 
 import httpx
-from PIL import Image, ImageOps
 from pydantic import ValidationError
 
-# Register HEIC/HEIF support
-try:
-    import pillow_heif
-
-    pillow_heif.register_heif_opener()
-except ImportError:
-    pass  # pillow-heif not installed, HEIC files won't work
-
+from photo_score.inference.errors import CloudInferenceError
+from photo_score.inference.image_utils import (
+    load_and_preprocess_image,
+    encode_image_base64,
+)
+from photo_score.inference.parsing import extract_json_from_response
 from photo_score.inference.prompts import (
     AESTHETIC_PROMPT,
     TECHNICAL_PROMPT,
@@ -36,7 +29,6 @@ from photo_score.storage.models import NormalizedAttributes
 logger = logging.getLogger(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-MAX_IMAGE_DIMENSION = 2048
 
 # Model tiers for different tasks
 # Scoring requires nuanced judgment - use higher quality model
@@ -47,7 +39,7 @@ MODEL_METADATA = (
 )
 
 
-class OpenRouterError(Exception):
+class OpenRouterError(CloudInferenceError):
     """Error from OpenRouter API."""
 
     pass
@@ -60,20 +52,23 @@ class OpenRouterClient:
         self,
         api_key: str | None = None,
         model_name: str = "anthropic/claude-3.5-sonnet",
+        model_version: str = "unknown",
     ):
         """Initialize client.
 
         Args:
             api_key: OpenRouter API key. Defaults to OPENROUTER_API_KEY env var.
             model_name: Model identifier for OpenRouter.
+            model_version: Version string for this model configuration.
         """
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not self.api_key:
-            raise ValueError(
+            raise CloudInferenceError(
                 "OpenRouter API key required. Set OPENROUTER_API_KEY environment variable."
             )
 
         self.model_name = model_name
+        self.model_version = model_version
         self.client = httpx.Client(timeout=120.0)
 
     def _load_and_encode_image(self, image_path: Path) -> tuple[str, str]:
@@ -82,26 +77,8 @@ class OpenRouterClient:
         Returns:
             Tuple of (base64_data, media_type)
         """
-        with Image.open(image_path) as img:
-            # Apply EXIF orientation (fixes rotated images from phones)
-            img = ImageOps.exif_transpose(img)
-
-            # Convert to RGB if needed (handles RGBA, P mode, etc.)
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-
-            # Resize if too large
-            if max(img.size) > MAX_IMAGE_DIMENSION:
-                ratio = MAX_IMAGE_DIMENSION / max(img.size)
-                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-                img = img.resize(new_size, Image.Resampling.LANCZOS)
-
-            # Encode to JPEG
-            buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=85)
-            base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-            return base64_data, "image/jpeg"
+        img = load_and_preprocess_image(image_path)
+        return encode_image_base64(img)
 
     def call_api(
         self,
@@ -191,40 +168,10 @@ class OpenRouterClient:
         result = response.json()
         content = result["choices"][0]["message"]["content"]
 
-        # Extract JSON from response (handle markdown code blocks and nested structures)
-        # First try to extract from markdown code block
-        code_block_match = re.search(
-            r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
-        )
-        if code_block_match:
-            try:
-                return json.loads(code_block_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # Try to find JSON by matching balanced braces
-        # Find the first { and extract everything to the matching }
-        start_idx = content.find("{")
-        if start_idx == -1:
-            raise OpenRouterError(f"No JSON found in response: {content}")
-
-        # Count braces to find matching closing brace
-        depth = 0
-        end_idx = start_idx
-        for i, char in enumerate(content[start_idx:], start_idx):
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    end_idx = i + 1
-                    break
-
-        json_str = content[start_idx:end_idx]
         try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as e:
-            raise OpenRouterError(f"Invalid JSON in response: {e}\nContent: {content}")
+            return extract_json_from_response(content)
+        except ValueError as e:
+            raise OpenRouterError(str(e))
 
     def analyze_aesthetic(self, image_path: Path) -> AestheticResponse:
         """Analyze aesthetic qualities of an image."""

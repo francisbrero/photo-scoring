@@ -8,6 +8,7 @@ class ModelConfig(BaseModel):
 
     name: str = Field(default="anthropic/claude-3.5-sonnet")
     version: str = Field(default="20241022")
+    backend: str = Field(default="cloud")
 
 
 class AestheticWeights(BaseModel):

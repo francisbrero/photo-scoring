@@ -8,7 +8,8 @@ from typing import Annotated, Optional
 import typer
 
 from photo_score.config.loader import get_default_config, load_config
-from photo_score.inference.client import OpenRouterClient, OpenRouterError
+from photo_score.inference.errors import InferenceError
+from photo_score.inference.factory import create_inference_client
 from photo_score.ingestion.discover import DEFAULT_EXTENSIONS, discover_images
 from photo_score.ingestion.metadata import extract_exif
 from photo_score.output.csv_writer import write_csv
@@ -69,6 +70,14 @@ def run(
             resolve_path=True,
         ),
     ] = None,
+    backend: Annotated[
+        Optional[str],
+        typer.Option(
+            "--backend",
+            "-b",
+            help="Inference backend: 'cloud', 'local', or 'auto'.",
+        ),
+    ] = None,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -112,6 +121,9 @@ def run(
         logger.info("Using default configuration")
         config = get_default_config()
 
+    # Determine backend: CLI flag overrides config
+    effective_backend = backend or config.model.backend
+
     # Parse extensions
     ext_set = None
     if extensions:
@@ -142,11 +154,25 @@ def run(
     cache_misses = 0
 
     try:
-        with OpenRouterClient(model_name=config.model.name) as client:
+        client = create_inference_client(
+            backend=effective_backend,
+            model_name=config.model.name,
+            model_version=config.model.version,
+        )
+
+        typer.echo(
+            f"Using {effective_backend} backend: {client.model_name} ({client.model_version})"
+        )
+
+        with client:
             with typer.progressbar(images, label="Processing images") as progress:
                 for image in progress:
-                    # Check cache for attributes
-                    cached_attrs = cache.get_attributes(image.image_id)
+                    # Check cache using client's model identity
+                    cached_attrs = cache.get_attributes(
+                        image.image_id,
+                        model_name=client.model_name,
+                        model_version=client.model_version,
+                    )
 
                     if cached_attrs is not None:
                         cache_hits += 1
@@ -166,12 +192,14 @@ def run(
                             # Stamp scored_at and cache result
                             attrs.scored_at = datetime.now(timezone.utc)
                             cache.store_attributes(attrs)
-                        except OpenRouterError as e:
+                        except InferenceError as e:
                             logger.warning(f"Failed to analyze {image.filename}: {e}")
                             continue
 
-                    # Get or extract metadata
-                    cached_metadata = cache.get_metadata(image.image_id)
+                    # Get or extract metadata (keyed by client model identity)
+                    cached_metadata = cache.get_metadata(
+                        image.image_id, model_name=client.model_name
+                    )
                     if cached_metadata is not None:
                         metadata = cached_metadata
                     else:
@@ -184,7 +212,7 @@ def run(
                             description = vision_meta.description
                             location_name = vision_meta.location_name
                             location_country = vision_meta.location_country
-                        except OpenRouterError as e:
+                        except InferenceError as e:
                             logger.warning(
                                 f"Failed to get metadata for {image.filename}: {e}"
                             )
@@ -202,8 +230,10 @@ def run(
                             location_country=location_country,
                         )
 
-                        # Cache metadata
-                        cache.store_metadata(image.image_id, metadata)
+                        # Cache metadata with client model identity
+                        cache.store_metadata(
+                            image.image_id, metadata, model_name=client.model_name
+                        )
 
                     # Compute scores
                     result = reducer.compute_scores(
@@ -224,7 +254,7 @@ def run(
 
                     results.append(result)
 
-    except OpenRouterError as e:
+    except InferenceError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
     except KeyboardInterrupt:
@@ -324,12 +354,16 @@ def rescore(
     reducer = ScoringReducer(config)
     explainer = ExplanationGenerator(config)
 
-    # Process images from cache only
+    # Process images from cache filtered by config model identity
+    model_name = config.model.name
+    model_version = config.model.version
     results: list[ScoringResult] = []
     missing = 0
 
     for image in images:
-        cached_attrs = cache.get_attributes(image.image_id)
+        cached_attrs = cache.get_attributes(
+            image.image_id, model_name=model_name, model_version=model_version
+        )
 
         if cached_attrs is None:
             missing += 1
@@ -350,8 +384,10 @@ def rescore(
             result.final_score,
         )
 
-        # Get cached metadata if available
-        cached_metadata = cache.get_metadata(image.image_id)
+        # Get cached metadata from the same model that produced the attributes
+        cached_metadata = cache.get_metadata(
+            image.image_id, model_name=cached_attrs.model_name
+        )
         if cached_metadata is not None:
             result.metadata = cached_metadata
 
@@ -845,6 +881,69 @@ def triage(
     else:
         typer.echo("No photos selected.")
         raise typer.Exit(code=0)
+
+
+@app.command()
+def hardware() -> None:
+    """Detect hardware capabilities for local inference."""
+    try:
+        from photo_score.inference.local.hardware import detect_capabilities
+    except ImportError:
+        typer.echo("Local inference extras not installed.")
+        typer.echo("Install with: uv pip install 'photo-score[local]'")
+        raise typer.Exit(code=1)
+
+    caps = detect_capabilities()
+    typer.echo("Hardware Detection:")
+    typer.echo(f"  CUDA available: {caps.has_cuda}")
+    typer.echo(f"  MPS available:  {caps.has_mps}")
+    if caps.cuda_vram_gb is not None:
+        typer.echo(f"  CUDA VRAM:      {caps.cuda_vram_gb:.1f} GB")
+    typer.echo(f"  Selected device: {caps.device}")
+    typer.echo(f"  Can run local:   {caps.can_run_local}")
+
+
+@app.command("models")
+def models_cmd(
+    action: Annotated[
+        str,
+        typer.Argument(help="Action: 'list', 'download', or 'delete'."),
+    ],
+) -> None:
+    """Manage local inference models."""
+    try:
+        from photo_score.inference.local.model_manager import ModelManager
+    except ImportError:
+        typer.echo("Local inference extras not installed.")
+        typer.echo("Install with: uv pip install 'photo-score[local]'")
+        raise typer.Exit(code=1)
+
+    manager = ModelManager()
+
+    if action == "list":
+        models_list = manager.list_models()
+        if not models_list:
+            typer.echo("No local models downloaded.")
+            typer.echo("Run: photo-score models download")
+        else:
+            for m in models_list:
+                typer.echo(f"  {m.model_id} ({m.size_gb:.1f} GB) - {m.path}")
+    elif action == "download":
+        if manager.is_model_available():
+            typer.echo("Model already downloaded.")
+            return
+        typer.echo("Downloading model (this may take a few minutes)...")
+        path = manager.download_model()
+        typer.echo(f"Model downloaded to: {path}")
+    elif action == "delete":
+        if not manager.is_model_available():
+            typer.echo("No model to delete.")
+            return
+        manager.delete_model()
+        typer.echo("Model deleted.")
+    else:
+        typer.echo(f"Unknown action: {action}. Use 'list', 'download', or 'delete'.")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

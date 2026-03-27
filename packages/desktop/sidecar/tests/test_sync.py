@@ -11,6 +11,10 @@ import pytest
 from photo_score.storage.cache import Cache
 from photo_score.storage.models import ImageMetadata, NormalizedAttributes
 
+# Must match handlers/sync.py SYNC_MODEL_NAME / SYNC_MODEL_VERSION
+SYNC_MODEL_NAME = "anthropic/claude-3.5-sonnet"
+SYNC_MODEL_VERSION = "cloud-v1"
+
 
 @pytest.fixture
 def temp_cache():
@@ -29,7 +33,7 @@ def temp_settings(tmp_path):
 
 
 def _make_attrs(image_id, scored_at=None, composition=0.5):
-    """Helper to create NormalizedAttributes."""
+    """Helper to create NormalizedAttributes with sync-eligible identity."""
     return NormalizedAttributes(
         image_id=image_id,
         composition=composition,
@@ -38,6 +42,8 @@ def _make_attrs(image_id, scored_at=None, composition=0.5):
         sharpness=0.5,
         exposure_balance=0.5,
         noise_level=0.5,
+        model_name=SYNC_MODEL_NAME,
+        model_version=SYNC_MODEL_VERSION,
         scored_at=scored_at,
     )
 
@@ -123,6 +129,7 @@ class TestSyncOrchestration:
         temp_cache.store_metadata(
             "img_meta",
             ImageMetadata(description="A sunset", location_name="Beach"),
+            model_name=SYNC_MODEL_NAME,
         )
 
         settings_file = tmp_path / "settings.json"
@@ -491,7 +498,7 @@ class TestSyncOrchestration:
         local_time = datetime.now(timezone.utc)
         attrs = _make_attrs("keep_local", scored_at=local_time, composition=0.9)
         temp_cache.store_attributes(attrs)
-        temp_cache.mark_synced(["keep_local"])
+        temp_cache.mark_synced([("keep_local", SYNC_MODEL_NAME, SYNC_MODEL_VERSION)])
 
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("{}")

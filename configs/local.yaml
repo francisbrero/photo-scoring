@@ -1,9 +1,9 @@
 version: "1.0"
 
 model:
-  name: "anthropic/claude-3.5-sonnet"
-  version: "20241022"
-  backend: "cloud"
+  name: "local/qwen2-vl-2b-instruct"
+  version: "1.0"
+  backend: "local"
 
 weights:
   aesthetic:

@@ -34,6 +34,11 @@ from .auth import get_auth_token  # noqa: E402
 
 router = APIRouter()
 
+# Desktop cloud model identity — filter cache lookups to these values
+# to prevent local CLI scores or CLI cloud scores from leaking in.
+CLOUD_MODEL_NAME = "anthropic/claude-3.5-sonnet"
+CLOUD_MODEL_VERSION = "cloud-v1"
+
 
 class ScoreRequest(BaseModel):
     """Request to score an image."""
@@ -101,7 +106,11 @@ async def get_attributes(
     try:
         image_id = compute_image_id(file_path)
         cache = Cache()
-        attrs = cache.get_attributes(image_id)
+        attrs = cache.get_attributes(
+            image_id,
+            model_name=CLOUD_MODEL_NAME,
+            model_version=CLOUD_MODEL_VERSION,
+        )
 
         if attrs is None:
             return None
@@ -144,8 +153,12 @@ async def score_image(request: ScoreRequest):
         cached = False
         credits_remaining = None
 
-        # Check cache first
-        attrs = cache.get_attributes(image_id)
+        # Check cache first — only match desktop cloud scores
+        attrs = cache.get_attributes(
+            image_id,
+            model_name=CLOUD_MODEL_NAME,
+            model_version=CLOUD_MODEL_VERSION,
+        )
 
         # Variables for critique data
         critique_explanation = ""
@@ -167,8 +180,8 @@ async def score_image(request: ScoreRequest):
                     sharpness=cloud_attrs["sharpness"],
                     exposure_balance=cloud_attrs["exposure_balance"],
                     noise_level=cloud_attrs["noise_level"],
-                    model_name=cloud_attrs.get("model_name", "cloud"),
-                    model_version=cloud_attrs.get("model_version", "v1"),
+                    model_name=cloud_attrs.get("model_name", CLOUD_MODEL_NAME),
+                    model_version=cloud_attrs.get("model_version", CLOUD_MODEL_VERSION),
                 )
                 attrs.scored_at = datetime.now(timezone.utc)
                 cache.store_attributes(attrs)
@@ -268,7 +281,11 @@ async def rescore_image(request: ScoreRequest):
         image_id = compute_image_id(file_path)
         cache = Cache()
 
-        attrs = cache.get_attributes(image_id)
+        attrs = cache.get_attributes(
+            image_id,
+            model_name=CLOUD_MODEL_NAME,
+            model_version=CLOUD_MODEL_VERSION,
+        )
         if attrs is None:
             raise HTTPException(
                 status_code=404,
@@ -341,7 +358,11 @@ async def get_cached_scores(request: CachedScoreRequest):
         try:
             image_id = compute_image_id(file_path)
             cache = Cache()
-            attrs = cache.get_attributes(image_id)
+            attrs = cache.get_attributes(
+                image_id,
+                model_name=CLOUD_MODEL_NAME,
+                model_version=CLOUD_MODEL_VERSION,
+            )
 
             if attrs is None:
                 scores[image_path] = None
