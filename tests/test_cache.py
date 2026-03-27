@@ -570,8 +570,17 @@ class TestMigration:
                 conn.execute(
                     """INSERT INTO normalized_attributes VALUES
                        (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    ("gemini_img", 0.7, 0.7, 0.7, 0.7, 0.7, 0.7,
-                     "google/gemini-1.5-pro", "exp-42"),
+                    (
+                        "gemini_img",
+                        0.7,
+                        0.7,
+                        0.7,
+                        0.7,
+                        0.7,
+                        0.7,
+                        "google/gemini-1.5-pro",
+                        "exp-42",
+                    ),
                 )
                 # Row with NULL model (genuinely legacy)
                 conn.execute(
